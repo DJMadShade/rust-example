@@ -13,5 +13,5 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | d
     && sudo apt update \
     && sudo apt install gh -y
 
-ENV CARGO_HOME=/workspaces/rust-example/.cargo
-RUN echo "export CARGO_HOME=/workspaces/rust-example/.cargo" >> /home/vscode/.bashrc
+ENV CARGO_HOME=/workspaces/rust-example/.cache
+RUN echo "export CARGO_HOME=/workspaces/rust-example/.cache" >> /home/vscode/.bashrc
