@@ -1,6 +1,6 @@
 /*
     Nyx, blazing fast astrodynamics
-    Copyright (C) 2022 Christopher Rabotin <christopher.rabotin@gmail.com>
+    Copyright (C) 2021 Christopher Rabotin <christopher.rabotin@gmail.com>
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -26,49 +26,7 @@ pub use traj::Traj;
 use super::StateParameter;
 use crate::linalg::allocator::Allocator;
 use crate::linalg::DefaultAllocator;
-use crate::time::{Duration, Epoch};
 use crate::{NyxError, Orbit, Spacecraft, State};
-
-use std::error::Error;
-use std::fmt;
-
-#[derive(Clone, PartialEq, Debug)]
-pub enum TrajError {
-    EventNotFound {
-        start: Epoch,
-        end: Epoch,
-        event: String,
-    },
-    NoInterpolationData(Epoch),
-    CreationError(String),
-    OutOfSpline {
-        req_epoch: Epoch,
-        req_dur: Duration,
-        spline_dur: Duration,
-    },
-}
-
-impl fmt::Display for TrajError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::EventNotFound { start, end, event } => {
-                write!(f, "Event {} not found between {} and {}", event, start, end)
-            }
-            Self::CreationError(reason) => write!(f, "Failed to create trajectory: {}", reason),
-            Self::NoInterpolationData(e) => write!(f, "No interpolation data at {}", e),
-            Self::OutOfSpline {
-                req_epoch,
-                req_dur,
-                spline_dur,
-            } => {
-                write!(f, "Probable bug: Requested epoch {}, corresponding to an offset of {} in a spline of duration {}", req_epoch, req_dur, spline_dur)
-            }
-        }
-    }
-}
-
-impl Error for TrajError {}
-
 pub trait InterpState: State
 where
     Self: Sized,
@@ -82,6 +40,11 @@ where
     /// Return the requested parameter and its time derivative
     fn value_and_deriv(&self, param: &StateParameter) -> Result<(f64, f64), NyxError> {
         Ok((self.value(param)?, self.deriv(param)?))
+    }
+
+    /// Return the requested parameter
+    fn value(&self, param: &StateParameter) -> Result<f64, NyxError> {
+        Ok(self.value_and_deriv(param)?.0)
     }
 
     /// Return the time derivative requested parameter
@@ -117,7 +80,7 @@ impl InterpState for Orbit {
             StateParameter::VX => Ok((self.vx, 0.0)),
             StateParameter::VY => Ok((self.vy, 0.0)),
             StateParameter::VZ => Ok((self.vz, 0.0)),
-            _ => Err(NyxError::StateParameterUnavailable),
+            _ => Err(NyxError::ParameterUnavailableForType),
         }
     }
 
@@ -147,7 +110,7 @@ impl InterpState for Orbit {
                 self.vz = value;
             }
 
-            _ => return Err(NyxError::StateParameterUnavailable),
+            _ => return Err(NyxError::ParameterUnavailableForType),
         }
         Ok(())
     }
@@ -174,7 +137,7 @@ impl InterpState for Spacecraft {
             StateParameter::VY => Ok((self.orbit.vy, 0.0)),
             StateParameter::VZ => Ok((self.orbit.vz, 0.0)),
             StateParameter::FuelMass => Ok((self.fuel_mass_kg, 0.0)),
-            _ => Err(NyxError::StateParameterUnavailable),
+            _ => Err(NyxError::ParameterUnavailableForType),
         }
     }
 
@@ -206,7 +169,7 @@ impl InterpState for Spacecraft {
             StateParameter::Cr => self.cr = value,
             StateParameter::Cd => self.cd = value,
             StateParameter::FuelMass => self.fuel_mass_kg = value,
-            _ => return Err(NyxError::StateParameterUnavailable),
+            _ => return Err(NyxError::ParameterUnavailableForType),
         }
         Ok(())
     }

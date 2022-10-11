@@ -18,13 +18,12 @@ impl<T: SimdRealField> Rotation2<T> {
     /// assert_relative_eq!(rot.angle(), std::f32::consts::FRAC_PI_2);
     /// ```
     #[inline]
-    #[must_use]
     pub fn slerp(&self, other: &Self, t: T) -> Self
     where
         T::Element: SimdRealField,
     {
-        let c1 = UnitComplex::from(self.clone());
-        let c2 = UnitComplex::from(other.clone());
+        let c1 = UnitComplex::from(*self);
+        let c2 = UnitComplex::from(*other);
         c1.slerp(&c2, t).into()
     }
 }
@@ -48,13 +47,12 @@ impl<T: SimdRealField> Rotation3<T> {
     /// assert_eq!(q.euler_angles(), (std::f32::consts::FRAC_PI_2, 0.0, 0.0));
     /// ```
     #[inline]
-    #[must_use]
     pub fn slerp(&self, other: &Self, t: T) -> Self
     where
         T: RealField,
     {
-        let q1 = UnitQuaternion::from(self.clone());
-        let q2 = UnitQuaternion::from(other.clone());
+        let q1 = UnitQuaternion::from(*self);
+        let q2 = UnitQuaternion::from(*other);
         q1.slerp(&q2, t).into()
     }
 
@@ -69,13 +67,12 @@ impl<T: SimdRealField> Rotation3<T> {
     /// * `epsilon`: the value below which the sinus of the angle separating both rotations
     /// must be to return `None`.
     #[inline]
-    #[must_use]
     pub fn try_slerp(&self, other: &Self, t: T, epsilon: T) -> Option<Self>
     where
         T: RealField,
     {
-        let q1 = UnitQuaternion::from(self.clone());
-        let q2 = UnitQuaternion::from(other.clone());
+        let q1 = Rotation3::from(*self);
+        let q2 = Rotation3::from(*other);
         q1.try_slerp(&q2, t, epsilon).map(|q| q.into())
     }
 }

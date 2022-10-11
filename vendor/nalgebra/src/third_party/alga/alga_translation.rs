@@ -79,7 +79,7 @@ impl<T: RealField + simba::scalar::RealField, const D: usize> Transformation<Poi
 
     #[inline]
     fn transform_vector(&self, v: &SVector<T, D>) -> SVector<T, D> {
-        *v
+        v.clone()
     }
 }
 
@@ -93,7 +93,7 @@ impl<T: RealField + simba::scalar::RealField, const D: usize> ProjectiveTransfor
 
     #[inline]
     fn inverse_transform_vector(&self, v: &SVector<T, D>) -> SVector<T, D> {
-        *v
+        v.clone()
     }
 }
 
@@ -106,7 +106,7 @@ impl<T: RealField + simba::scalar::RealField, const D: usize> AffineTransformati
 
     #[inline]
     fn decompose(&self) -> (Self, Id, Id, Id) {
-        (*self, Id::new(), Id::new(), Id::new())
+        (self.clone(), Id::new(), Id::new(), Id::new())
     }
 
     #[inline]
@@ -121,22 +121,22 @@ impl<T: RealField + simba::scalar::RealField, const D: usize> AffineTransformati
 
     #[inline]
     fn append_rotation(&self, _: &Self::Rotation) -> Self {
-        *self
+        self.clone()
     }
 
     #[inline]
     fn prepend_rotation(&self, _: &Self::Rotation) -> Self {
-        *self
+        self.clone()
     }
 
     #[inline]
     fn append_scaling(&self, _: &Self::NonUniformScaling) -> Self {
-        *self
+        self.clone()
     }
 
     #[inline]
     fn prepend_scaling(&self, _: &Self::NonUniformScaling) -> Self {
-        *self
+        self.clone()
     }
 }
 
@@ -147,7 +147,7 @@ impl<T: RealField + simba::scalar::RealField, const D: usize> Similarity<Point<T
 
     #[inline]
     fn translation(&self) -> Self {
-        *self
+        self.clone()
     }
 
     #[inline]
@@ -176,7 +176,7 @@ impl<T: RealField + simba::scalar::RealField, const D: usize> AlgaTranslation<Po
 {
     #[inline]
     fn to_vector(&self) -> SVector<T, D> {
-        self.vector
+        self.vector.clone()
     }
 
     #[inline]
@@ -186,7 +186,7 @@ impl<T: RealField + simba::scalar::RealField, const D: usize> AlgaTranslation<Po
 
     #[inline]
     fn powf(&self, n: T) -> Option<Self> {
-        Some(Self::from(self.vector * n))
+        Some(Self::from(&self.vector * n))
     }
 
     #[inline]

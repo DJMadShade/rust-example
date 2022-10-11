@@ -1,32 +1,5 @@
 # Changelog
 
-## 0.15.2
-
-### Enhancements
-
-* Dropped `once_cell` dependency to support MSRV again.
-
-## 0.15.1
-
-### Enhancements
-
-* ANSI support no longer depends on `regex` crate.
-* Crate now supports `minver`.
-
-## 0.15.0
-
-### Enhancements
-
-* Addeed more key recognitions
-* Exposed `pad_str_with` to public API
-* Added `ReadWritePair`
-* Support `color256` in `Style::from_dotted_str`
-
-### BREAKING
-
-* Added `ReadWritePair` to `TermTarget` to allow arbitrary read write pairs behave as a term
-* Removed `Copy` and `PartialEq` from `TermTarget`
-
 ## 0.14.1
 
 ### Enhancements
@@ -40,9 +13,6 @@
 ### Enhancements
 
 * Added emoji support for newer Windows terminals.
-
-### BREAKING
-
 * Made the windows terminal emulation a non default feature (`windows-console-colors`)
 
 ## 0.13.0

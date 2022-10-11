@@ -153,16 +153,17 @@ impl Dynamics for BiasDriftCoupledGM {
 #[test]
 fn gm_test() {
     use nyx::propagators::Propagator;
-    use nyx::time::Unit;
+    use nyx::time::TimeUnit;
+    use std::sync::Arc;
     let init = BiasDriftState::zeros();
     let model = BiasDriftCoupledGM {
         tau: 900.0,
         omega: 2.0,
         zeta: 0.1,
     };
-    let fstate = Propagator::default_dp78(model)
+    let fstate = Propagator::default(Arc::new(model))
         .with(init)
-        .for_duration(60 * Unit::Second)
+        .for_duration(60 * TimeUnit::Second)
         .unwrap();
     println!("Final state = {}", fstate);
 }

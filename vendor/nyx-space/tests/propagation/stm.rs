@@ -3,7 +3,7 @@ use nyx::cosmic::{Bodies, Cosm, Orbit, Spacecraft};
 use nyx::dynamics::orbital::OrbitalDynamics;
 use nyx::linalg::{Const, Matrix6, OVector};
 use nyx::propagators::*;
-use nyx::time::{Epoch, Unit};
+use nyx::time::{Epoch, TimeUnit};
 use nyx::State;
 use nyx_space::md::ui::SpacecraftDynamics;
 
@@ -18,7 +18,7 @@ fn stm_fixed_step() {
 
     let prop = Propagator::new::<RK4Fixed>(
         OrbitalDynamics::two_body(),
-        PropOpts::with_fixed_step(10 * Unit::Second),
+        PropOpts::with_fixed_step(10 * TimeUnit::Second),
     );
 
     // First test is in mostly linear regime (low eccentricity)
@@ -30,7 +30,7 @@ fn stm_fixed_step() {
 
         let ten_steps = prop
             .with(init.with_stm())
-            .for_duration(100 * Unit::Second)
+            .for_duration(100 * TimeUnit::Second)
             .unwrap();
 
         let nominal = ten_steps.to_cartesian_vec();
@@ -59,7 +59,7 @@ fn stm_fixed_step() {
 
             let these_ten_steps = prop
                 .with(this_init)
-                .for_duration(100 * Unit::Second)
+                .for_duration(100 * TimeUnit::Second)
                 .unwrap();
 
             let jac_val = (these_ten_steps.to_cartesian_vec() - nominal) / pert;
@@ -94,7 +94,7 @@ fn stm_variable_step() {
     let eme2k = cosm.frame("EME2000");
     let epoch = Epoch::from_gregorian_tai_at_midnight(2020, 1, 1);
 
-    let prop = Propagator::default_dp78(OrbitalDynamics::two_body());
+    let prop = Propagator::default(OrbitalDynamics::two_body());
 
     let eccs = vec![1e-5, 0.2];
 
@@ -105,7 +105,7 @@ fn stm_variable_step() {
 
         let ten_steps = prop
             .with(init.with_stm())
-            .for_duration(100 * Unit::Second)
+            .for_duration(100 * TimeUnit::Second)
             .unwrap();
 
         let nominal = ten_steps.to_cartesian_vec();
@@ -134,7 +134,7 @@ fn stm_variable_step() {
 
             let these_ten_steps = prop
                 .with(this_init)
-                .for_duration(100 * Unit::Second)
+                .for_duration(100 * TimeUnit::Second)
                 .unwrap();
 
             let jac_val = (these_ten_steps.to_cartesian_vec() - nominal) / pert;
@@ -171,7 +171,7 @@ fn stm_between_steps() {
     let eme2k = cosm.frame("EME2000");
     let epoch = Epoch::from_gregorian_tai_at_midnight(2020, 1, 1);
 
-    let prop = Propagator::default_dp78(OrbitalDynamics::two_body());
+    let prop = Propagator::default(OrbitalDynamics::two_body());
 
     let eccs = vec![1e-5, 0.2];
 
@@ -180,15 +180,18 @@ fn stm_between_steps() {
     for ecc in eccs {
         let init = Orbit::keplerian(8000.0, ecc, 10.0, 5.0, 25.0, 0.0, epoch, eme2k).with_stm();
 
-        let t100 = prop.with(init).for_duration(100 * Unit::Second).unwrap();
+        let t100 = prop
+            .with(init)
+            .for_duration(100 * TimeUnit::Second)
+            .unwrap();
 
         let phi_t100_t0 = t100.stm().unwrap();
 
-        let t50 = prop.with(init).for_duration(50 * Unit::Second).unwrap();
+        let t50 = prop.with(init).for_duration(50 * TimeUnit::Second).unwrap();
 
         let phi_t50_t0 = t50.stm().unwrap();
 
-        let t50_to_t100 = prop.with(t50).for_duration(50 * Unit::Second).unwrap();
+        let t50_to_t100 = prop.with(t50).for_duration(50 * TimeUnit::Second).unwrap();
 
         let phi_t100_t50 = t50_to_t100.stm().unwrap();
 
@@ -214,7 +217,7 @@ fn stm_hifi_variable_step() {
     let eme2k = cosm.frame("EME2000");
     let epoch = Epoch::from_gregorian_tai_at_midnight(2020, 1, 1);
 
-    let prop = Propagator::default_dp78(OrbitalDynamics::point_masses(
+    let prop = Propagator::default(OrbitalDynamics::point_masses(
         &[Bodies::Luna, Bodies::Sun],
         cosm.clone(),
     ));
@@ -228,7 +231,7 @@ fn stm_hifi_variable_step() {
 
         let ten_steps = prop
             .with(init.with_stm())
-            .for_duration(100 * Unit::Second)
+            .for_duration(100 * TimeUnit::Second)
             .unwrap();
 
         let nominal = ten_steps.to_cartesian_vec();
@@ -257,7 +260,7 @@ fn stm_hifi_variable_step() {
 
             let these_ten_steps = prop
                 .with(this_init)
-                .for_duration(100 * Unit::Second)
+                .for_duration(100 * TimeUnit::Second)
                 .unwrap();
 
             let jac_val = (these_ten_steps.to_cartesian_vec() - nominal) / pert;
@@ -314,12 +317,12 @@ fn orbit_set_unset() {
 
     let init = Orbit::keplerian(8000.0, 0.5, 10.0, 5.0, 25.0, 0.0, epoch, eme2k).with_stm();
 
-    let prop = Propagator::default_dp78(OrbitalDynamics::point_masses(
+    let prop = Propagator::default(OrbitalDynamics::point_masses(
         &[Bodies::Luna, Bodies::Sun],
         cosm.clone(),
     ));
 
-    let orbit = prop.with(init).for_duration(2 * Unit::Hour).unwrap();
+    let orbit = prop.with(init).for_duration(2 * TimeUnit::Hour).unwrap();
 
     let vec = orbit.as_vector().unwrap();
 
@@ -364,21 +367,24 @@ fn sc_and_orbit_stm_chk() {
     let init_orbit = Orbit::keplerian(8000.0, 0.5, 10.0, 5.0, 25.0, 0.0, epoch, eme2k).with_stm();
     let init_sc = Spacecraft::from_srp_defaults(init_orbit, 0.0, 0.0);
 
-    let prop_orbit = Propagator::default_dp78(OrbitalDynamics::point_masses(
+    let prop_orbit = Propagator::default(OrbitalDynamics::point_masses(
         &[Bodies::Luna, Bodies::Sun],
         cosm.clone(),
     ));
 
-    let prop_sc = Propagator::default_dp78(SpacecraftDynamics::new(OrbitalDynamics::point_masses(
+    let prop_sc = Propagator::default(SpacecraftDynamics::new(OrbitalDynamics::point_masses(
         &[Bodies::Luna, Bodies::Sun],
         cosm.clone(),
     )));
 
     let final_orbit = prop_orbit
         .with(init_orbit)
-        .for_duration(2 * Unit::Hour)
+        .for_duration(2 * TimeUnit::Hour)
         .unwrap();
-    let final_sc = prop_sc.with(init_sc).for_duration(2 * Unit::Hour).unwrap();
+    let final_sc = prop_sc
+        .with(init_sc)
+        .for_duration(2 * TimeUnit::Hour)
+        .unwrap();
 
     assert_eq!(
         final_orbit, final_sc.orbit,

@@ -65,7 +65,7 @@ where
 
     for i in 0..dim {
         let piv = matrix.slice_range(i.., i).icamax() + i;
-        let diag = matrix[(piv, i)].clone();
+        let diag = matrix[(piv, i)];
 
         if diag.is_zero() {
             return false;
@@ -90,7 +90,7 @@ where
 {
     /// Computes the LU decomposition with partial (row) pivoting of `matrix`.
     pub fn new(mut matrix: OMatrix<T, R, C>) -> Self {
-        let (nrows, ncols) = matrix.shape_generic();
+        let (nrows, ncols) = matrix.data.shape();
         let min_nrows_ncols = nrows.min(ncols);
 
         let mut p = PermutationSequence::identity_generic(min_nrows_ncols);
@@ -101,7 +101,7 @@ where
 
         for i in 0..min_nrows_ncols.value() {
             let piv = matrix.slice_range(i.., i).icamax() + i;
-            let diag = matrix[(piv, i)].clone();
+            let diag = matrix[(piv, i)];
 
             if diag.is_zero() {
                 // No non-zero entries on this column.
@@ -127,12 +127,11 @@ where
 
     /// The lower triangular matrix of this decomposition.
     #[inline]
-    #[must_use]
     pub fn l(&self) -> OMatrix<T, R, DimMinimum<R, C>>
     where
         DefaultAllocator: Allocator<T, R, DimMinimum<R, C>>,
     {
-        let (nrows, ncols) = self.lu.shape_generic();
+        let (nrows, ncols) = self.lu.data.shape();
         let mut m = self.lu.columns_generic(0, nrows.min(ncols)).into_owned();
         m.fill_upper_triangle(T::zero(), 1);
         m.fill_diagonal(T::one());
@@ -149,7 +148,7 @@ where
     where
         DefaultAllocator: Reallocator<T, R, C, R, DimMinimum<R, C>>,
     {
-        let (nrows, ncols) = self.lu.shape_generic();
+        let (nrows, ncols) = self.lu.data.shape();
         let mut m = self.lu.resize_generic(nrows, nrows.min(ncols), T::zero());
         m.fill_upper_triangle(T::zero(), 1);
         m.fill_diagonal(T::one());
@@ -162,7 +161,7 @@ where
     where
         DefaultAllocator: Reallocator<T, R, C, R, DimMinimum<R, C>>,
     {
-        let (nrows, ncols) = self.lu.shape_generic();
+        let (nrows, ncols) = self.lu.data.shape();
         let mut m = self.lu.resize_generic(nrows, nrows.min(ncols), T::zero());
         m.fill_upper_triangle(T::zero(), 1);
         m.fill_diagonal(T::one());
@@ -171,18 +170,16 @@ where
 
     /// The upper triangular matrix of this decomposition.
     #[inline]
-    #[must_use]
     pub fn u(&self) -> OMatrix<T, DimMinimum<R, C>, C>
     where
         DefaultAllocator: Allocator<T, DimMinimum<R, C>, C>,
     {
-        let (nrows, ncols) = self.lu.shape_generic();
+        let (nrows, ncols) = self.lu.data.shape();
         self.lu.rows_generic(0, nrows.min(ncols)).upper_triangle()
     }
 
     /// The row permutations of this decomposition.
     #[inline]
-    #[must_use]
     pub fn p(&self) -> &PermutationSequence<DimMinimum<R, C>> {
         &self.p
     }
@@ -216,7 +213,6 @@ where
     /// Solves the linear system `self * x = b`, where `x` is the unknown to be determined.
     ///
     /// Returns `None` if `self` is not invertible.
-    #[must_use = "Did you mean to use solve_mut()?"]
     pub fn solve<R2: Dim, C2: Dim, S2>(
         &self,
         b: &Matrix<T, R2, C2, S2>,
@@ -261,14 +257,13 @@ where
     /// Computes the inverse of the decomposed matrix.
     ///
     /// Returns `None` if the matrix is not invertible.
-    #[must_use]
     pub fn try_inverse(&self) -> Option<OMatrix<T, D, D>> {
         assert!(
             self.lu.is_square(),
             "LU inverse: unable to compute the inverse of a non-square matrix."
         );
 
-        let (nrows, ncols) = self.lu.shape_generic();
+        let (nrows, ncols) = self.lu.data.shape();
         let mut res = OMatrix::identity_generic(nrows, ncols);
         if self.try_inverse_to(&mut res) {
             Some(res)
@@ -296,7 +291,6 @@ where
     }
 
     /// Computes the determinant of the decomposed matrix.
-    #[must_use]
     pub fn determinant(&self) -> T {
         let dim = self.lu.nrows();
         assert!(
@@ -306,18 +300,17 @@ where
 
         let mut res = T::one();
         for i in 0..dim {
-            res *= unsafe { self.lu.get_unchecked((i, i)).clone() };
+            res *= unsafe { *self.lu.get_unchecked((i, i)) };
         }
 
         res * self.p.determinant()
     }
 
     /// Indicates if the decomposed matrix is invertible.
-    #[must_use]
     pub fn is_invertible(&self) -> bool {
         assert!(
             self.lu.is_square(),
-            "LU: unable to test the invertibility of a non-square matrix."
+            "QR: unable to test the invertibility of a non-square matrix."
         );
 
         for i in 0..self.lu.nrows() {
@@ -351,7 +344,7 @@ where
 
     for k in 0..pivot_row.ncols() {
         down.column_mut(k)
-            .axpy(-pivot_row[k].clone(), &coeffs, T::one());
+            .axpy(-pivot_row[k].inlined_clone(), &coeffs, T::one());
     }
 }
 
@@ -383,6 +376,6 @@ pub fn gauss_step_swap<T, R: Dim, C: Dim, S>(
     for k in 0..pivot_row.ncols() {
         mem::swap(&mut pivot_row[k], &mut down[(piv - 1, k)]);
         down.column_mut(k)
-            .axpy(-pivot_row[k].clone(), &coeffs, T::one());
+            .axpy(-pivot_row[k].inlined_clone(), &coeffs, T::one());
     }
 }

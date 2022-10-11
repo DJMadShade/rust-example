@@ -12,6 +12,8 @@ use std::{char, mem::MaybeUninit};
 
 use encode_unicode::error::InvalidUtf16Tuple;
 use encode_unicode::CharExt;
+#[cfg(feature = "windows-console-colors")]
+use regex::Regex;
 use winapi::ctypes::c_void;
 use winapi::shared::minwindef::DWORD;
 use winapi::shared::minwindef::MAX_PATH;
@@ -36,9 +38,6 @@ use winapi_util::console::{Color, Console, Intense};
 use crate::common_term;
 use crate::kb::Key;
 use crate::term::{Term, TermTarget};
-
-#[cfg(feature = "windows-console-colors")]
-use regex::Regex;
 
 #[cfg(feature = "windows-console-colors")]
 lazy_static::lazy_static! {
@@ -330,8 +329,6 @@ pub fn key_from_key_code(code: INT) -> Key {
         winapi::um::winuser::VK_HOME => Key::Home,
         winapi::um::winuser::VK_END => Key::End,
         winapi::um::winuser::VK_DELETE => Key::Del,
-        winapi::um::winuser::VK_SHIFT => Key::Shift,
-        winapi::um::winuser::VK_MENU => Key::Alt,
         _ => Key::Unknown,
     }
 }

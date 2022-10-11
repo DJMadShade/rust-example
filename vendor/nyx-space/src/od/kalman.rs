@@ -1,6 +1,6 @@
 /*
     Nyx, blazing fast astrodynamics
-    Copyright (C) 2022 Christopher Rabotin <christopher.rabotin@gmail.com>
+    Copyright (C) 2021 Christopher Rabotin <christopher.rabotin@gmail.com>
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -24,7 +24,7 @@ pub use super::residual::Residual;
 pub use super::snc::SNC;
 use super::{CovarFormat, EpochFormat, Filter, State};
 pub use crate::errors::NyxError;
-pub use crate::time::{Epoch, Unit};
+pub use crate::time::{Epoch, TimeUnit};
 
 /// Defines both a Classical and an Extended Kalman filter (CKF and EKF)
 /// S: State size (not propagated vector size)

@@ -2,12 +2,17 @@ use approx::{AbsDiffEq, RelativeEq, UlpsEq};
 use num::{One, Zero};
 use std::fmt;
 use std::hash;
+#[cfg(feature = "abomonation-serialize")]
+use std::io::{Result as IOResult, Write};
 
 #[cfg(feature = "serde-serialize-no-std")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[cfg(feature = "serde-serialize-no-std")]
 use crate::base::storage::Owned;
+
+#[cfg(feature = "abomonation-serialize")]
+use abomonation::Abomonation;
 
 use simba::scalar::RealField;
 use simba::simd::SimdRealField;
@@ -49,21 +54,9 @@ use crate::geometry::Point;
 /// * [Conversion to a matrix <span style="float:right;">`matrix`, `to_homogeneous`…</span>](#conversion-to-a-matrix)
 ///
 #[repr(C)]
-#[cfg_attr(feature = "rkyv-serialize", derive(bytecheck::CheckBytes))]
-#[cfg_attr(
-    feature = "rkyv-serialize-no-std",
-    derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)
-)]
-#[cfg_attr(feature = "cuda", derive(cust_core::DeviceCopy))]
-#[derive(Copy, Clone)]
-pub struct Rotation<T, const D: usize> {
+#[derive(Debug)]
+pub struct Rotation<T: Scalar, const D: usize> {
     matrix: SMatrix<T, D, D>,
-}
-
-impl<T: fmt::Debug, const D: usize> fmt::Debug for Rotation<T, D> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        self.matrix.fmt(formatter)
-    }
 }
 
 impl<T: Scalar + hash::Hash, const D: usize> hash::Hash for Rotation<T, D>
@@ -75,20 +68,38 @@ where
     }
 }
 
-#[cfg(feature = "bytemuck")]
-unsafe impl<T, const D: usize> bytemuck::Zeroable for Rotation<T, D>
-where
-    T: Scalar + bytemuck::Zeroable,
-    SMatrix<T, D, D>: bytemuck::Zeroable,
+impl<T: Scalar + Copy, const D: usize> Copy for Rotation<T, D> where
+    <DefaultAllocator as Allocator<T, Const<D>, Const<D>>>::Buffer: Copy
 {
 }
 
-#[cfg(feature = "bytemuck")]
-unsafe impl<T, const D: usize> bytemuck::Pod for Rotation<T, D>
+impl<T: Scalar, const D: usize> Clone for Rotation<T, D>
 where
-    T: Scalar + bytemuck::Pod,
-    SMatrix<T, D, D>: bytemuck::Pod,
+    <DefaultAllocator as Allocator<T, Const<D>, Const<D>>>::Buffer: Clone,
 {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self::from_matrix_unchecked(self.matrix.clone())
+    }
+}
+
+#[cfg(feature = "abomonation-serialize")]
+impl<T, const D: usize> Abomonation for Rotation<T, D>
+where
+    T: Scalar,
+    SMatrix<T, D, D>: Abomonation,
+{
+    unsafe fn entomb<W: Write>(&self, writer: &mut W) -> IOResult<()> {
+        self.matrix.entomb(writer)
+    }
+
+    fn extent(&self) -> usize {
+        self.matrix.extent()
+    }
+
+    unsafe fn exhume<'a, 'b>(&'a mut self, bytes: &'b mut [u8]) -> Option<&'b mut [u8]> {
+        self.matrix.exhume(bytes)
+    }
 }
 
 #[cfg(feature = "serde-serialize-no-std")]
@@ -119,10 +130,10 @@ where
     }
 }
 
-impl<T, const D: usize> Rotation<T, D> {
+impl<T: Scalar, const D: usize> Rotation<T, D> {
     /// Creates a new rotation from the given square matrix.
     ///
-    /// The matrix orthonormality is not checked.
+    /// The matrix squareness is checked but not its orthonormality.
     ///
     /// # Example
     /// ```
@@ -143,7 +154,12 @@ impl<T, const D: usize> Rotation<T, D> {
     /// assert_eq!(*rot.matrix(), mat);
     /// ```
     #[inline]
-    pub const fn from_matrix_unchecked(matrix: SMatrix<T, D, D>) -> Self {
+    pub fn from_matrix_unchecked(matrix: SMatrix<T, D, D>) -> Self {
+        assert!(
+            matrix.is_square(),
+            "Unable to create a rotation from a non-square matrix."
+        );
+
         Self { matrix }
     }
 }
@@ -169,7 +185,6 @@ impl<T: Scalar, const D: usize> Rotation<T, D> {
     /// assert_eq!(*rot.matrix(), expected);
     /// ```
     #[inline]
-    #[must_use]
     pub fn matrix(&self) -> &SMatrix<T, D, D> {
         &self.matrix
     }
@@ -183,9 +198,9 @@ impl<T: Scalar, const D: usize> Rotation<T, D> {
 
     /// A mutable reference to the underlying matrix representation of this rotation.
     ///
-    /// This is suffixed by "_unchecked" because this allows the user to replace the
-    /// matrix by another one that is non-inversible or non-orthonormal. If one of
-    /// those properties is broken, subsequent method calls may return bogus results.
+    /// This is suffixed by "_unchecked" because this allows the user to replace the matrix by another one that is
+    /// non-square, non-inversible, or non-orthonormal. If one of those properties is broken,
+    /// subsequent method calls may be UB.
     #[inline]
     pub fn matrix_mut_unchecked(&mut self) -> &mut SMatrix<T, D, D> {
         &mut self.matrix
@@ -217,7 +232,7 @@ impl<T: Scalar, const D: usize> Rotation<T, D> {
     }
 
     /// Unwraps the underlying matrix.
-    /// Deprecated: Use [`Rotation::into_inner`] instead.
+    /// Deprecated: Use [Rotation::into_inner] instead.
     #[deprecated(note = "use `.into_inner()` instead")]
     #[inline]
     pub fn unwrap(self) -> SMatrix<T, D, D> {
@@ -247,7 +262,6 @@ impl<T: Scalar, const D: usize> Rotation<T, D> {
     /// assert_eq!(rot.to_homogeneous(), expected);
     /// ```
     #[inline]
-    #[must_use]
     pub fn to_homogeneous(&self) -> OMatrix<T, DimNameSum<Const<D>, U1>, DimNameSum<Const<D>, U1>>
     where
         T: Zero + One,
@@ -389,7 +403,6 @@ where
     /// assert_relative_eq!(transformed_point, Point3::new(3.0, 2.0, -1.0), epsilon = 1.0e-6);
     /// ```
     #[inline]
-    #[must_use]
     pub fn transform_point(&self, pt: &Point<T, D>) -> Point<T, D> {
         self * pt
     }
@@ -409,7 +422,6 @@ where
     /// assert_relative_eq!(transformed_vector, Vector3::new(3.0, 2.0, -1.0), epsilon = 1.0e-6);
     /// ```
     #[inline]
-    #[must_use]
     pub fn transform_vector(&self, v: &SVector<T, D>) -> SVector<T, D> {
         self * v
     }
@@ -429,7 +441,6 @@ where
     /// assert_relative_eq!(transformed_point, Point3::new(-3.0, 2.0, 1.0), epsilon = 1.0e-6);
     /// ```
     #[inline]
-    #[must_use]
     pub fn inverse_transform_point(&self, pt: &Point<T, D>) -> Point<T, D> {
         Point::from(self.inverse_transform_vector(&pt.coords))
     }
@@ -449,7 +460,6 @@ where
     /// assert_relative_eq!(transformed_vector, Vector3::new(-3.0, 2.0, 1.0), epsilon = 1.0e-6);
     /// ```
     #[inline]
-    #[must_use]
     pub fn inverse_transform_vector(&self, v: &SVector<T, D>) -> SVector<T, D> {
         self.matrix().tr_mul(v)
     }
@@ -469,7 +479,6 @@ where
     /// assert_relative_eq!(transformed_vector, -Vector3::y_axis(), epsilon = 1.0e-6);
     /// ```
     #[inline]
-    #[must_use]
     pub fn inverse_transform_unit_vector(&self, v: &Unit<SVector<T, D>>) -> Unit<SVector<T, D>> {
         Unit::new_unchecked(self.inverse_transform_vector(&**v))
     }
@@ -487,7 +496,7 @@ impl<T: Scalar + PartialEq, const D: usize> PartialEq for Rotation<T, D> {
 impl<T, const D: usize> AbsDiffEq for Rotation<T, D>
 where
     T: Scalar + AbsDiffEq,
-    T::Epsilon: Clone,
+    T::Epsilon: Copy,
 {
     type Epsilon = T::Epsilon;
 
@@ -505,7 +514,7 @@ where
 impl<T, const D: usize> RelativeEq for Rotation<T, D>
 where
     T: Scalar + RelativeEq,
-    T::Epsilon: Clone,
+    T::Epsilon: Copy,
 {
     #[inline]
     fn default_max_relative() -> Self::Epsilon {
@@ -527,7 +536,7 @@ where
 impl<T, const D: usize> UlpsEq for Rotation<T, D>
 where
     T: Scalar + UlpsEq,
-    T::Epsilon: Clone,
+    T::Epsilon: Copy,
 {
     #[inline]
     fn default_max_ulps() -> u32 {
@@ -549,7 +558,7 @@ impl<T, const D: usize> fmt::Display for Rotation<T, D>
 where
     T: RealField + fmt::Display,
 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let precision = f.precision().unwrap_or(3);
 
         writeln!(f, "Rotation matrix {{")?;

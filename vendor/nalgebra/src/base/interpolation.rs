@@ -20,13 +20,12 @@ impl<T: Scalar + Zero + One + ClosedAdd + ClosedSub + ClosedMul, D: Dim, S: Stor
     /// let y = Vector3::new(10.0, 20.0, 30.0);
     /// assert_eq!(x.lerp(&y, 0.1), Vector3::new(1.9, 3.8, 5.7));
     /// ```
-    #[must_use]
     pub fn lerp<S2: Storage<T, D>>(&self, rhs: &Vector<T, D, S2>, t: T) -> OVector<T, D>
     where
         DefaultAllocator: Allocator<T, D>,
     {
         let mut res = self.clone_owned();
-        res.axpy(t.clone(), rhs, T::one() - t);
+        res.axpy(t.inlined_clone(), rhs, T::one() - t);
         res
     }
 
@@ -46,7 +45,6 @@ impl<T: Scalar + Zero + One + ClosedAdd + ClosedSub + ClosedMul, D: Dim, S: Stor
     ///
     /// assert_eq!(v, v2.normalize());
     /// ```
-    #[must_use]
     pub fn slerp<S2: Storage<T, D>>(&self, rhs: &Vector<T, D, S2>, t: T) -> OVector<T, D>
     where
         T: RealField,
@@ -74,7 +72,6 @@ impl<T: RealField, D: Dim, S: Storage<T, D>> Unit<Vector<T, D, S>> {
     ///
     /// assert_eq!(v, v2);
     /// ```
-    #[must_use]
     pub fn slerp<S2: Storage<T, D>>(
         &self,
         rhs: &Unit<Vector<T, D, S2>>,
@@ -92,7 +89,6 @@ impl<T: RealField, D: Dim, S: Storage<T, D>> Unit<Vector<T, D, S>> {
     ///
     /// Returns `None` if the two vectors are almost collinear and with opposite direction
     /// (in this case, there is an infinity of possible results).
-    #[must_use]
     pub fn try_slerp<S2: Storage<T, D>>(
         &self,
         rhs: &Unit<Vector<T, D, S2>>,
@@ -109,14 +105,14 @@ impl<T: RealField, D: Dim, S: Storage<T, D>> Unit<Vector<T, D, S>> {
             return Some(Unit::new_unchecked(self.clone_owned()));
         }
 
-        let hang = c_hang.clone().acos();
-        let s_hang = (T::one() - c_hang.clone() * c_hang).sqrt();
+        let hang = c_hang.acos();
+        let s_hang = (T::one() - c_hang * c_hang).sqrt();
 
         // TODO: what if s_hang is 0.0 ? The result is not well-defined.
         if relative_eq!(s_hang, T::zero(), epsilon = epsilon) {
             None
         } else {
-            let ta = ((T::one() - t.clone()) * hang.clone()).sin() / s_hang.clone();
+            let ta = ((T::one() - t) * hang).sin() / s_hang;
             let tb = (t * hang).sin() / s_hang;
             let mut res = self.scale(ta);
             res.axpy(tb, &**rhs, T::one());

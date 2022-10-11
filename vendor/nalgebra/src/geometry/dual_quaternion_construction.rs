@@ -27,6 +27,7 @@ impl<T: Scalar> DualQuaternion<T> {
     /// The dual quaternion multiplicative identity.
     ///
     /// # Example
+    ///
     /// ```
     /// # use nalgebra::{DualQuaternion, Quaternion};
     ///
@@ -133,7 +134,6 @@ impl<T: SimdRealField> UnitDualQuaternion<T> {
     /// The unit dual quaternion multiplicative identity, which also represents
     /// the identity transformation as an isometry.
     ///
-    /// # Example
     /// ```
     /// # use nalgebra::{UnitDualQuaternion, UnitQuaternion, Vector3, Point3};
     /// let ident = UnitDualQuaternion::identity();
@@ -171,7 +171,6 @@ where
     /// Return a dual quaternion representing the translation and orientation
     /// given by the provided rotation quaternion and translation vector.
     ///
-    /// # Example
     /// ```
     /// # #[macro_use] extern crate approx;
     /// # use nalgebra::{UnitDualQuaternion, UnitQuaternion, Vector3, Point3};
@@ -189,7 +188,7 @@ where
         UnitDualQuaternion::new_unchecked(DualQuaternion {
             real: rotation.clone().into_inner(),
             dual: Quaternion::from_parts(T::zero(), translation.vector)
-                * rotation.into_inner()
+                * rotation.clone().into_inner()
                 * half,
         })
     }
@@ -197,7 +196,6 @@ where
     /// Return a unit dual quaternion representing the translation and orientation
     /// given by the provided isometry.
     ///
-    /// # Example
     /// ```
     /// # #[macro_use] extern crate approx;
     /// # use nalgebra::{Isometry3, UnitDualQuaternion, UnitQuaternion, Vector3, Point3};
@@ -212,8 +210,6 @@ where
     /// ```
     #[inline]
     pub fn from_isometry(isometry: &Isometry3<T>) -> Self {
-        // TODO: take the isometry by-move instead of cloning it.
-        let isometry = isometry.clone();
         UnitDualQuaternion::from_parts(isometry.translation, isometry.rotation)
     }
 

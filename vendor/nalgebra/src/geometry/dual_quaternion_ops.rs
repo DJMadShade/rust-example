@@ -1,6 +1,3 @@
-// The macros break if the references are taken out, for some reason.
-#![allow(clippy::op_ref)]
-
 /*
  * This file provides:
  *
@@ -52,6 +49,7 @@ use crate::{
     DualQuaternion, Isometry3, Point, Point3, Quaternion, SimdRealField, Translation3, Unit,
     UnitDualQuaternion, UnitQuaternion, Vector, Vector3, U3,
 };
+use std::mem;
 use std::ops::{
     Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign,
 };
@@ -59,14 +57,14 @@ use std::ops::{
 impl<T: SimdRealField> AsRef<[T; 8]> for DualQuaternion<T> {
     #[inline]
     fn as_ref(&self) -> &[T; 8] {
-        unsafe { &*(self as *const Self as *const [T; 8]) }
+        unsafe { mem::transmute(self) }
     }
 }
 
 impl<T: SimdRealField> AsMut<[T; 8]> for DualQuaternion<T> {
     #[inline]
     fn as_mut(&mut self) -> &mut [T; 8] {
-        unsafe { &mut *(self as *mut Self as *mut [T; 8]) }
+        unsafe { mem::transmute(self) }
     }
 }
 
@@ -417,7 +415,7 @@ dual_quaternion_op_impl!(
     (U4, U1), (U4, U1);
     self: &'a UnitDualQuaternion<T>, rhs: &'b UnitQuaternion<T>,
     Output = UnitDualQuaternion<T> => U1, U4;
-    self * UnitDualQuaternion::<T>::new_unchecked(DualQuaternion::from_real(rhs.clone().into_inner()));
+    self * UnitDualQuaternion::<T>::new_unchecked(DualQuaternion::from_real(rhs.into_inner()));
     'a, 'b);
 
 dual_quaternion_op_impl!(
@@ -433,7 +431,7 @@ dual_quaternion_op_impl!(
     (U4, U1), (U4, U1);
     self: UnitDualQuaternion<T>, rhs: &'b UnitQuaternion<T>,
     Output = UnitDualQuaternion<T> => U3, U3;
-    self * UnitDualQuaternion::<T>::new_unchecked(DualQuaternion::from_real(rhs.clone().into_inner()));
+    self * UnitDualQuaternion::<T>::new_unchecked(DualQuaternion::from_real(rhs.into_inner()));
     'b);
 
 dual_quaternion_op_impl!(
@@ -449,7 +447,7 @@ dual_quaternion_op_impl!(
     (U4, U1), (U4, U1);
     self: &'a UnitQuaternion<T>, rhs: &'b UnitDualQuaternion<T>,
     Output = UnitDualQuaternion<T> => U1, U4;
-    UnitDualQuaternion::<T>::new_unchecked(DualQuaternion::from_real(self.clone().into_inner())) * rhs;
+    UnitDualQuaternion::<T>::new_unchecked(DualQuaternion::from_real(self.into_inner())) * rhs;
     'a, 'b);
 
 dual_quaternion_op_impl!(
@@ -457,7 +455,7 @@ dual_quaternion_op_impl!(
     (U4, U1), (U4, U1);
     self: &'a UnitQuaternion<T>, rhs: UnitDualQuaternion<T>,
     Output = UnitDualQuaternion<T> => U3, U3;
-    UnitDualQuaternion::<T>::new_unchecked(DualQuaternion::from_real(self.clone().into_inner())) * rhs;
+    UnitDualQuaternion::<T>::new_unchecked(DualQuaternion::from_real(self.into_inner())) * rhs;
     'a);
 
 dual_quaternion_op_impl!(
@@ -520,7 +518,7 @@ dual_quaternion_op_impl!(
     #[allow(clippy::suspicious_arithmetic_impl)]
     {
         UnitDualQuaternion::<T>::new_unchecked(
-            DualQuaternion::from_real(self.clone().into_inner())
+            DualQuaternion::from_real(self.into_inner())
         ) * rhs.inverse()
     }; 'a, 'b);
 
@@ -532,7 +530,7 @@ dual_quaternion_op_impl!(
     #[allow(clippy::suspicious_arithmetic_impl)]
     {
         UnitDualQuaternion::<T>::new_unchecked(
-            DualQuaternion::from_real(self.clone().into_inner())
+            DualQuaternion::from_real(self.into_inner())
         ) * rhs.inverse()
     }; 'a);
 
@@ -828,7 +826,7 @@ dual_quaternion_op_impl!(
     (U4, U1), (U3, U1) for SB: Storage<T, U3> ;
     self: &'a UnitDualQuaternion<T>, rhs: &'b Vector<T, U3, SB>,
     Output = Vector3<T> => U3, U1;
-    Unit::new_unchecked(self.as_ref().real.clone()) * rhs;
+    Unit::new_unchecked(self.as_ref().real) * rhs;
     'a, 'b);
 
 dual_quaternion_op_impl!(
@@ -864,7 +862,7 @@ dual_quaternion_op_impl!(
         let two: T = crate::convert(2.0f64);
         let q_point = Quaternion::from_parts(T::zero(), rhs.coords.clone());
         Point::from(
-            ((self.as_ref().real.clone() * q_point + self.as_ref().dual.clone() * two) * self.as_ref().real.clone().conjugate())
+            ((self.as_ref().real * q_point + self.as_ref().dual * two) * self.as_ref().real.conjugate())
                 .vector()
                 .into_owned(),
         )
@@ -1219,8 +1217,8 @@ macro_rules! scalar_op_impl(
             #[inline]
             fn $op(self, n: T) -> Self::Output {
                 DualQuaternion::from_real_and_dual(
-                    self.real.clone().$op(n.clone()),
-                    self.dual.clone().$op(n)
+                    self.real.$op(n),
+                    self.dual.$op(n)
                 )
             }
         }
@@ -1232,8 +1230,8 @@ macro_rules! scalar_op_impl(
             #[inline]
             fn $op(self, n: T) -> Self::Output {
                 DualQuaternion::from_real_and_dual(
-                    self.real.clone().$op(n.clone()),
-                    self.dual.clone().$op(n)
+                    self.real.$op(n),
+                    self.dual.$op(n)
                 )
             }
         }
@@ -1243,7 +1241,7 @@ macro_rules! scalar_op_impl(
 
             #[inline]
             fn $op_assign(&mut self, n: T) {
-                self.real.$op_assign(n.clone());
+                self.real.$op_assign(n);
                 self.dual.$op_assign(n);
             }
         }

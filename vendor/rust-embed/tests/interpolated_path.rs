@@ -7,9 +7,15 @@ struct Asset;
 
 #[test]
 fn get_works() {
-  assert!(Asset::get("index.html").is_some(), "index.html should exist");
-  assert!(Asset::get("gg.html").is_none(), "gg.html should not exist");
-  assert!(Asset::get("images/llama.png").is_some(), "llama.png should exist");
+  if Asset::get("index.html").is_none() {
+    panic!("index.html should exist");
+  }
+  if Asset::get("gg.html").is_some() {
+    panic!("gg.html should not exist");
+  }
+  if Asset::get("images/llama.png").is_none() {
+    panic!("llama.png should exist");
+  }
 }
 
 #[test]

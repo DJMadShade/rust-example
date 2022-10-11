@@ -144,7 +144,11 @@ impl<T: RealField + simba::scalar::RealField> NormedSpace for Quaternion<T> {
 
     #[inline]
     fn try_normalize(&self, min_norm: T) -> Option<Self> {
-        self.coords.try_normalize(min_norm).map(Self::from)
+        if let Some(v) = self.coords.try_normalize(min_norm) {
+            Some(Self::from(v))
+        } else {
+            None
+        }
     }
 
     #[inline]
@@ -230,17 +234,17 @@ impl<T: RealField + simba::scalar::RealField> AffineTransformation<Point3<T>>
 
     #[inline]
     fn decompose(&self) -> (Id, Self, Id, Self) {
-        (Id::new(), *self, Id::new(), Self::identity())
+        (Id::new(), self.clone(), Id::new(), Self::identity())
     }
 
     #[inline]
     fn append_translation(&self, _: &Self::Translation) -> Self {
-        *self
+        self.clone()
     }
 
     #[inline]
     fn prepend_translation(&self, _: &Self::Translation) -> Self {
-        *self
+        self.clone()
     }
 
     #[inline]
@@ -255,12 +259,12 @@ impl<T: RealField + simba::scalar::RealField> AffineTransformation<Point3<T>>
 
     #[inline]
     fn append_scaling(&self, _: &Self::NonUniformScaling) -> Self {
-        *self
+        self.clone()
     }
 
     #[inline]
     fn prepend_scaling(&self, _: &Self::NonUniformScaling) -> Self {
-        *self
+        self.clone()
     }
 }
 
@@ -274,7 +278,7 @@ impl<T: RealField + simba::scalar::RealField> Similarity<Point3<T>> for UnitQuat
 
     #[inline]
     fn rotation(&self) -> Self {
-        *self
+        self.clone()
     }
 
     #[inline]

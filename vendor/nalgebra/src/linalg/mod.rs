@@ -24,8 +24,6 @@ mod qr;
 mod schur;
 mod solve;
 mod svd;
-mod svd2;
-mod svd3;
 mod symmetric_eigen;
 mod symmetric_tridiagonal;
 mod udu;

@@ -1,12 +1,17 @@
-use std::fmt;
+#[cfg(feature = "abomonation-serialize")]
+use std::io::{Result as IOResult, Write};
+use std::mem;
 use std::ops::Deref;
 
 #[cfg(feature = "serde-serialize-no-std")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+#[cfg(feature = "abomonation-serialize")]
+use abomonation::Abomonation;
+
 use crate::allocator::Allocator;
 use crate::base::DefaultAllocator;
-use crate::storage::RawStorage;
+use crate::storage::Storage;
 use crate::{Dim, Matrix, OMatrix, RealField, Scalar, SimdComplexField, SimdRealField};
 
 /// A wrapper that ensures the underlying algebraic entity has a unit norm.
@@ -20,21 +25,9 @@ use crate::{Dim, Matrix, OMatrix, RealField, Scalar, SimdComplexField, SimdRealF
 /// and [`UnitQuaternion`](crate::UnitQuaternion); both built on top of `Unit`.  If you are interested
 /// in their documentation, read their dedicated pages directly.
 #[repr(transparent)]
-#[derive(Clone, Hash, Copy)]
-#[cfg_attr(feature = "rkyv-serialize", derive(bytecheck::CheckBytes))]
-#[cfg_attr(
-    feature = "rkyv-serialize-no-std",
-    derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)
-)]
-// #[cfg_attr(feature = "cuda", derive(cust_core::DeviceCopy))]
+#[derive(Clone, Hash, Debug, Copy)]
 pub struct Unit<T> {
     pub(crate) value: T,
-}
-
-impl<T: fmt::Debug> fmt::Debug for Unit<T> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        self.value.fmt(formatter)
-    }
 }
 
 #[cfg(feature = "bytemuck")]
@@ -63,14 +56,60 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Unit<T> {
     }
 }
 
-#[cfg(feature = "cuda")]
-unsafe impl<T: cust_core::DeviceCopy, R, C, S> cust_core::DeviceCopy for Unit<Matrix<T, R, C, S>>
-where
-    T: Scalar,
-    R: Dim,
-    C: Dim,
-    S: RawStorage<T, R, C> + Copy,
-{
+#[cfg(feature = "abomonation-serialize")]
+impl<T: Abomonation> Abomonation for Unit<T> {
+    unsafe fn entomb<W: Write>(&self, writer: &mut W) -> IOResult<()> {
+        self.value.entomb(writer)
+    }
+
+    fn extent(&self) -> usize {
+        self.value.extent()
+    }
+
+    unsafe fn exhume<'a, 'b>(&'a mut self, bytes: &'b mut [u8]) -> Option<&'b mut [u8]> {
+        self.value.exhume(bytes)
+    }
+}
+
+#[cfg(feature = "rkyv-serialize-no-std")]
+mod rkyv_impl {
+    use super::Unit;
+    use rkyv::{offset_of, project_struct, Archive, Deserialize, Fallible, Serialize};
+
+    impl<T: Archive> Archive for Unit<T> {
+        type Archived = Unit<T::Archived>;
+        type Resolver = T::Resolver;
+
+        fn resolve(
+            &self,
+            pos: usize,
+            resolver: Self::Resolver,
+            out: &mut ::core::mem::MaybeUninit<Self::Archived>,
+        ) {
+            self.value.resolve(
+                pos + offset_of!(Self::Archived, value),
+                resolver,
+                project_struct!(out: Self::Archived => value),
+            );
+        }
+    }
+
+    impl<T: Serialize<S>, S: Fallible + ?Sized> Serialize<S> for Unit<T> {
+        fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+            Ok(self.value.serialize(serializer)?)
+        }
+    }
+
+    impl<T: Archive, D: Fallible + ?Sized> Deserialize<Unit<T>, D> for Unit<T::Archived>
+    where
+        T::Archived: Deserialize<T, D>,
+    {
+        fn deserialize(&self, deserializer: &mut D) -> Result<Unit<T>, D::Error> {
+            Ok(Unit {
+                value: self.value.deserialize(deserializer)?,
+            })
+        }
+    }
 }
 
 impl<T, R, C, S> PartialEq for Unit<Matrix<T, R, C, S>>
@@ -78,7 +117,7 @@ where
     T: Scalar + PartialEq,
     R: Dim,
     C: Dim,
-    S: RawStorage<T, R, C>,
+    S: Storage<T, R, C>,
 {
     #[inline]
     fn eq(&self, rhs: &Self) -> bool {
@@ -91,7 +130,7 @@ where
     T: Scalar + Eq,
     R: Dim,
     C: Dim,
-    S: RawStorage<T, R, C>,
+    S: Storage<T, R, C>,
 {
 }
 
@@ -132,7 +171,7 @@ impl<T: Normed> Unit<T> {
     #[inline]
     pub fn new_and_get(mut value: T) -> (Self, T::Norm) {
         let n = value.norm();
-        value.unscale_mut(n.clone());
+        value.unscale_mut(n);
         (Unit { value }, n)
     }
 
@@ -146,9 +185,9 @@ impl<T: Normed> Unit<T> {
     {
         let sq_norm = value.norm_squared();
 
-        if sq_norm > min_norm.clone() * min_norm {
+        if sq_norm > min_norm * min_norm {
             let n = sq_norm.simd_sqrt();
-            value.unscale_mut(n.clone());
+            value.unscale_mut(n);
             Some((Unit { value }, n))
         } else {
             None
@@ -163,7 +202,7 @@ impl<T: Normed> Unit<T> {
     #[inline]
     pub fn renormalize(&mut self) -> T::Norm {
         let n = self.norm();
-        self.value.unscale_mut(n.clone());
+        self.value.unscale_mut(n);
         n
     }
 
@@ -183,14 +222,14 @@ impl<T: Normed> Unit<T> {
 impl<T> Unit<T> {
     /// Wraps the given value, assuming it is already normalized.
     #[inline]
-    pub const fn new_unchecked(value: T) -> Self {
+    pub fn new_unchecked(value: T) -> Self {
         Unit { value }
     }
 
     /// Wraps the given reference, assuming it is already normalized.
     #[inline]
-    pub fn from_ref_unchecked(value: &T) -> &Self {
-        unsafe { &*(value as *const T as *const Self) }
+    pub fn from_ref_unchecked<'a>(value: &'a T) -> &'a Self {
+        unsafe { mem::transmute(value) }
     }
 
     /// Retrieves the underlying value.
@@ -200,7 +239,7 @@ impl<T> Unit<T> {
     }
 
     /// Retrieves the underlying value.
-    /// Deprecated: use [`Unit::into_inner`] instead.
+    /// Deprecated: use [Unit::into_inner] instead.
     #[deprecated(note = "use `.into_inner()` instead")]
     #[inline]
     pub fn unwrap(self) -> T {
@@ -293,7 +332,7 @@ impl<T> Deref for Unit<T> {
 
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*(self as *const Self as *const T) }
+        unsafe { mem::transmute(self) }
     }
 }
 

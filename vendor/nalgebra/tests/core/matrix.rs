@@ -80,8 +80,8 @@ fn iter() {
 #[test]
 fn debug_output_corresponds_to_data_container() {
     let m = Matrix2::new(1.0, 2.0, 3.0, 4.0);
-    let output_stable = "[[1, 3], [2, 4]]"; // Current output on the stable channel.
-    let output_nightly = "[[1.0, 3.0], [2.0, 4.0]]"; // Current output on the nightly channel.
+    let output_stable = "Matrix { data: [[1, 3], [2, 4]] }"; // Current output on the stable channel.
+    let output_nightly = "Matrix { data: [[1.0, 3.0], [2.0, 4.0]] }"; // Current output on the nightly channel.
     let current_output = format!("{:?}", m);
     dbg!(output_stable);
     dbg!(output_nightly);
@@ -447,7 +447,7 @@ fn apply() {
         1.0, 2.0, 3.0, 4.0, 6.0, 7.0, 8.0, 9.0, 10.0, 9.0, 8.0, 7.0, 6.0, 4.0, 3.0, 2.0,
     );
 
-    a.apply(|e| *e = e.round());
+    a.apply(|e| e.round());
 
     assert_eq!(a, expected);
 }
@@ -1107,32 +1107,4 @@ fn partial_eq_different_types() {
     // TODO - implement those comparisons
     // assert_ne!(static_mat, typenum_static_mat);
     //assert_ne!(typenum_static_mat, static_mat);
-}
-
-fn generic_omatrix_to_string<D>(
-    vector: &nalgebra::OVector<f64, D>,
-    matrix: &nalgebra::OMatrix<f64, D, D>,
-) -> (String, String)
-where
-    D: nalgebra::Dim,
-    nalgebra::DefaultAllocator: nalgebra::base::allocator::Allocator<f64, D>,
-    nalgebra::DefaultAllocator: nalgebra::base::allocator::Allocator<f64, D, D>,
-{
-    (vector.to_string(), matrix.to_string())
-}
-
-#[test]
-fn omatrix_to_string() {
-    let dvec: nalgebra::DVector<f64> = nalgebra::dvector![1.0, 2.0];
-    let dmatr: nalgebra::DMatrix<f64> = nalgebra::dmatrix![1.0, 2.0; 3.0, 4.0];
-    let svec: nalgebra::SVector<f64, 2> = nalgebra::vector![1.0, 2.0];
-    let smatr: nalgebra::SMatrix<f64, 2, 2> = nalgebra::matrix![1.0, 2.0; 3.0, 4.0];
-    assert_eq!(
-        generic_omatrix_to_string(&dvec, &dmatr),
-        (dvec.to_string(), dmatr.to_string())
-    );
-    assert_eq!(
-        generic_omatrix_to_string(&svec, &smatr),
-        (svec.to_string(), smatr.to_string())
-    );
 }

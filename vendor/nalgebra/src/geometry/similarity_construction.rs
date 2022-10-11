@@ -20,16 +20,6 @@ use crate::{
     Translation, UnitComplex, UnitQuaternion,
 };
 
-impl<T: SimdRealField, R, const D: usize> Default for Similarity<T, R, D>
-where
-    T::Element: SimdRealField,
-    R: AbstractRotation<T, D>,
-{
-    fn default() -> Self {
-        Self::identity()
-    }
-}
-
 impl<T: SimdRealField, R, const D: usize> Similarity<T, R, D>
 where
     T::Element: SimdRealField,
@@ -38,6 +28,7 @@ where
     /// Creates a new identity similarity.
     ///
     /// # Example
+    ///
     /// ```
     /// # use nalgebra::{Similarity2, Point2, Similarity3, Point3};
     ///
@@ -94,6 +85,7 @@ where
     /// its axis passing through the point `p`.
     ///
     /// # Example
+    ///
     /// ```
     /// # #[macro_use] extern crate approx;
     /// # use std::f32;
@@ -144,6 +136,7 @@ where
     /// Creates a new similarity from a translation, a rotation, and an uniform scaling factor.
     ///
     /// # Example
+    ///
     /// ```
     /// # #[macro_use] extern crate approx;
     /// # use std::f32;
@@ -185,6 +178,7 @@ where
     /// Creates a new similarity from a translation and a rotation angle.
     ///
     /// # Example
+    ///
     /// ```
     /// # #[macro_use] extern crate approx;
     /// # use std::f32;
@@ -228,6 +222,7 @@ macro_rules! similarity_construction_impl(
             /// factor.
             ///
             /// # Example
+            ///
             /// ```
             /// # #[macro_use] extern crate approx;
             /// # use std::f32;
@@ -283,6 +278,7 @@ macro_rules! similarity_construction_impl(
             ///   to `eye - at`. Non-collinearity is not checked.
             ///
             /// # Example
+            ///
             /// ```
             /// # #[macro_use] extern crate approx;
             /// # use std::f32;
@@ -310,7 +306,7 @@ macro_rules! similarity_construction_impl(
                 Self::from_isometry(Isometry::<_, $Rot<T>, 3>::face_towards(eye, target, up), scaling)
             }
 
-            /// Deprecated: Use [`SimilarityMatrix3::face_towards`](Self::face_towards) instead.
+            /// Deprecated: Use [SimilarityMatrix3::face_towards] instead.
             #[deprecated(note="renamed to `face_towards`")]
             pub fn new_observer_frames(eye:    &Point3<T>,
                                        target: &Point3<T>,
@@ -332,6 +328,7 @@ macro_rules! similarity_construction_impl(
             ///   requirement of this parameter is to not be collinear to `target - eye`.
             ///
             /// # Example
+            ///
             /// ```
             /// # #[macro_use] extern crate approx;
             /// # use std::f32;
@@ -369,6 +366,7 @@ macro_rules! similarity_construction_impl(
             ///   requirement of this parameter is to not be collinear to `target - eye`.
             ///
             /// # Example
+            ///
             /// ```
             /// # #[macro_use] extern crate approx;
             /// # use std::f32;

@@ -28,7 +28,6 @@ impl<T: Scalar, R: Dim, C: Dim, S: Storage<T, R, C>> Matrix<T, R, C, S> {
     /// assert_eq!(a.abs(), Matrix2::new(0.0, 1.0, 2.0, 3.0))
     /// ```
     #[inline]
-    #[must_use]
     pub fn abs(&self) -> OMatrix<T, R, C>
     where
         T: Signed,
@@ -50,7 +49,6 @@ macro_rules! component_binop_impl(
     ($($binop: ident, $binop_mut: ident, $binop_assign: ident, $cmpy: ident, $Trait: ident . $op: ident . $op_assign: ident, $desc:expr, $desc_cmpy:expr, $desc_mut:expr);* $(;)*) => {$(
         #[doc = $desc]
         #[inline]
-        #[must_use]
         pub fn $binop<R2, C2, SB>(&self, rhs: &Matrix<T, R2, C2, SB>) -> MatrixComponentOp<T, R1, C1, R2, C2>
             where T: $Trait,
                   R2: Dim, C2: Dim,
@@ -64,7 +62,7 @@ macro_rules! component_binop_impl(
             for j in 0 .. res.ncols() {
                 for i in 0 .. res.nrows() {
                     unsafe {
-                        res.get_unchecked_mut((i, j)).$op_assign(rhs.get_unchecked((i, j)).clone());
+                        res.get_unchecked_mut((i, j)).$op_assign(rhs.get_unchecked((i, j)).inlined_clone());
                     }
                 }
             }
@@ -91,7 +89,7 @@ macro_rules! component_binop_impl(
                 for j in 0 .. self.ncols() {
                     for i in 0 .. self.nrows() {
                         unsafe {
-                            let res = alpha.clone() * a.get_unchecked((i, j)).clone().$op(b.get_unchecked((i, j)).clone());
+                            let res = alpha.inlined_clone() * a.get_unchecked((i, j)).inlined_clone().$op(b.get_unchecked((i, j)).inlined_clone());
                             *self.get_unchecked_mut((i, j)) = res;
                         }
                     }
@@ -101,8 +99,8 @@ macro_rules! component_binop_impl(
                 for j in 0 .. self.ncols() {
                     for i in 0 .. self.nrows() {
                         unsafe {
-                            let res = alpha.clone() * a.get_unchecked((i, j)).clone().$op(b.get_unchecked((i, j)).clone());
-                            *self.get_unchecked_mut((i, j)) = beta.clone() * self.get_unchecked((i, j)).clone() + res;
+                            let res = alpha.inlined_clone() * a.get_unchecked((i, j)).inlined_clone().$op(b.get_unchecked((i, j)).inlined_clone());
+                            *self.get_unchecked_mut((i, j)) = beta.inlined_clone() * self.get_unchecked((i, j)).inlined_clone() + res;
                         }
                     }
                 }
@@ -124,7 +122,7 @@ macro_rules! component_binop_impl(
             for j in 0 .. self.ncols() {
                 for i in 0 .. self.nrows() {
                     unsafe {
-                        self.get_unchecked_mut((i, j)).$op_assign(rhs.get_unchecked((i, j)).clone());
+                        self.get_unchecked_mut((i, j)).$op_assign(rhs.get_unchecked((i, j)).inlined_clone());
                     }
                 }
             }
@@ -253,7 +251,6 @@ impl<T: Scalar, R1: Dim, C1: Dim, SA: Storage<T, R1, C1>> Matrix<T, R1, C1, SA> 
     /// assert_eq!(u.inf(&v), expected)
     /// ```
     #[inline]
-    #[must_use]
     pub fn inf(&self, other: &Self) -> OMatrix<T, R1, C1>
     where
         T: SimdPartialOrd,
@@ -274,7 +271,6 @@ impl<T: Scalar, R1: Dim, C1: Dim, SA: Storage<T, R1, C1>> Matrix<T, R1, C1, SA> 
     /// assert_eq!(u.sup(&v), expected)
     /// ```
     #[inline]
-    #[must_use]
     pub fn sup(&self, other: &Self) -> OMatrix<T, R1, C1>
     where
         T: SimdPartialOrd,
@@ -295,7 +291,6 @@ impl<T: Scalar, R1: Dim, C1: Dim, SA: Storage<T, R1, C1>> Matrix<T, R1, C1, SA> 
     /// assert_eq!(u.inf_sup(&v), expected)
     /// ```
     #[inline]
-    #[must_use]
     pub fn inf_sup(&self, other: &Self) -> (OMatrix<T, R1, C1>, OMatrix<T, R1, C1>)
     where
         T: SimdPartialOrd,
@@ -347,7 +342,7 @@ impl<T: Scalar, R1: Dim, C1: Dim, SA: Storage<T, R1, C1>> Matrix<T, R1, C1, SA> 
         SA: StorageMut<T, R1, C1>,
     {
         for e in self.iter_mut() {
-            *e += rhs.clone()
+            *e += rhs.inlined_clone()
         }
     }
 }

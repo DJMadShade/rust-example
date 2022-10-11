@@ -2,9 +2,14 @@ use approx::{AbsDiffEq, RelativeEq, UlpsEq};
 use num::{One, Zero};
 use std::fmt;
 use std::hash;
+#[cfg(feature = "abomonation-serialize")]
+use std::io::{Result as IOResult, Write};
 
 #[cfg(feature = "serde-serialize-no-std")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+#[cfg(feature = "abomonation-serialize")]
+use abomonation::Abomonation;
 
 use simba::scalar::{ClosedAdd, ClosedNeg, ClosedSub};
 
@@ -17,23 +22,11 @@ use crate::geometry::Point;
 
 /// A translation.
 #[repr(C)]
-#[cfg_attr(feature = "rkyv-serialize", derive(bytecheck::CheckBytes))]
-#[cfg_attr(
-    feature = "rkyv-serialize-no-std",
-    derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)
-)]
-#[cfg_attr(feature = "cuda", derive(cust_core::DeviceCopy))]
-#[derive(Copy, Clone)]
+#[derive(Debug)]
 pub struct Translation<T, const D: usize> {
     /// The translation coordinates, i.e., how much is added to a point's coordinates when it is
     /// translated.
     pub vector: SVector<T, D>,
-}
-
-impl<T: fmt::Debug, const D: usize> fmt::Debug for Translation<T, D> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        self.vector.as_slice().fmt(formatter)
-    }
 }
 
 impl<T: Scalar + hash::Hash, const D: usize> hash::Hash for Translation<T, D>
@@ -45,20 +38,35 @@ where
     }
 }
 
-#[cfg(feature = "bytemuck")]
-unsafe impl<T, const D: usize> bytemuck::Zeroable for Translation<T, D>
+impl<T: Scalar + Copy, const D: usize> Copy for Translation<T, D> where Owned<T, Const<D>>: Copy {}
+
+impl<T: Scalar, const D: usize> Clone for Translation<T, D>
 where
-    T: Scalar + bytemuck::Zeroable,
-    SVector<T, D>: bytemuck::Zeroable,
+    Owned<T, Const<D>>: Clone,
 {
+    #[inline]
+    fn clone(&self) -> Self {
+        Translation::from(self.vector.clone())
+    }
 }
 
-#[cfg(feature = "bytemuck")]
-unsafe impl<T, const D: usize> bytemuck::Pod for Translation<T, D>
+#[cfg(feature = "abomonation-serialize")]
+impl<T, const D: usize> Abomonation for Translation<T, D>
 where
-    T: Scalar + bytemuck::Pod,
-    SVector<T, D>: bytemuck::Pod,
+    T: Scalar,
+    SVector<T, D>: Abomonation,
 {
+    unsafe fn entomb<W: Write>(&self, writer: &mut W) -> IOResult<()> {
+        self.vector.entomb(writer)
+    }
+
+    fn extent(&self) -> usize {
+        self.vector.extent()
+    }
+
+    unsafe fn exhume<'a, 'b>(&'a mut self, bytes: &'b mut [u8]) -> Option<&'b mut [u8]> {
+        self.vector.exhume(bytes)
+    }
 }
 
 #[cfg(feature = "serde-serialize-no-std")]
@@ -86,6 +94,49 @@ where
         let matrix = SVector::<T, D>::deserialize(deserializer)?;
 
         Ok(Translation::from(matrix))
+    }
+}
+
+#[cfg(feature = "rkyv-serialize-no-std")]
+mod rkyv_impl {
+    use super::Translation;
+    use crate::base::SVector;
+    use rkyv::{offset_of, project_struct, Archive, Deserialize, Fallible, Serialize};
+
+    impl<T: Archive, const D: usize> Archive for Translation<T, D> {
+        type Archived = Translation<T::Archived, D>;
+        type Resolver = <SVector<T, D> as Archive>::Resolver;
+
+        fn resolve(
+            &self,
+            pos: usize,
+            resolver: Self::Resolver,
+            out: &mut core::mem::MaybeUninit<Self::Archived>,
+        ) {
+            self.vector.resolve(
+                pos + offset_of!(Self::Archived, vector),
+                resolver,
+                project_struct!(out: Self::Archived => vector),
+            );
+        }
+    }
+
+    impl<T: Serialize<S>, S: Fallible + ?Sized, const D: usize> Serialize<S> for Translation<T, D> {
+        fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+            Ok(self.vector.serialize(serializer)?)
+        }
+    }
+
+    impl<T: Archive, _D: Fallible + ?Sized, const D: usize> Deserialize<Translation<T, D>, _D>
+        for Translation<T::Archived, D>
+    where
+        T::Archived: Deserialize<T, _D>,
+    {
+        fn deserialize(&self, deserializer: &mut _D) -> Result<Translation<T, D>, _D::Error> {
+            Ok(Translation {
+                vector: self.vector.deserialize(deserializer)?,
+            })
+        }
     }
 }
 
@@ -139,7 +190,6 @@ impl<T: Scalar, const D: usize> Translation<T, D> {
     /// assert_eq!(t.to_homogeneous(), expected);
     /// ```
     #[inline]
-    #[must_use]
     pub fn to_homogeneous(&self) -> OMatrix<T, DimNameSum<Const<D>, U1>, DimNameSum<Const<D>, U1>>
     where
         T: Zero + One,
@@ -190,9 +240,7 @@ impl<T: Scalar + ClosedAdd, const D: usize> Translation<T, D> {
     /// let t = Translation3::new(1.0, 2.0, 3.0);
     /// let transformed_point = t.transform_point(&Point3::new(4.0, 5.0, 6.0));
     /// assert_eq!(transformed_point, Point3::new(5.0, 7.0, 9.0));
-    /// ```
     #[inline]
-    #[must_use]
     pub fn transform_point(&self, pt: &Point<T, D>) -> Point<T, D> {
         pt + &self.vector
     }
@@ -207,9 +255,7 @@ impl<T: Scalar + ClosedSub, const D: usize> Translation<T, D> {
     /// let t = Translation3::new(1.0, 2.0, 3.0);
     /// let transformed_point = t.inverse_transform_point(&Point3::new(4.0, 5.0, 6.0));
     /// assert_eq!(transformed_point, Point3::new(3.0, 3.0, 3.0));
-    /// ```
     #[inline]
-    #[must_use]
     pub fn inverse_transform_point(&self, pt: &Point<T, D>) -> Point<T, D> {
         pt - &self.vector
     }
@@ -226,7 +272,7 @@ impl<T: Scalar + PartialEq, const D: usize> PartialEq for Translation<T, D> {
 
 impl<T: Scalar + AbsDiffEq, const D: usize> AbsDiffEq for Translation<T, D>
 where
-    T::Epsilon: Clone,
+    T::Epsilon: Copy,
 {
     type Epsilon = T::Epsilon;
 
@@ -243,7 +289,7 @@ where
 
 impl<T: Scalar + RelativeEq, const D: usize> RelativeEq for Translation<T, D>
 where
-    T::Epsilon: Clone,
+    T::Epsilon: Copy,
 {
     #[inline]
     fn default_max_relative() -> Self::Epsilon {
@@ -264,7 +310,7 @@ where
 
 impl<T: Scalar + UlpsEq, const D: usize> UlpsEq for Translation<T, D>
 where
-    T::Epsilon: Clone,
+    T::Epsilon: Copy,
 {
     #[inline]
     fn default_max_ulps() -> u32 {
@@ -283,7 +329,7 @@ where
  *
  */
 impl<T: Scalar + fmt::Display, const D: usize> fmt::Display for Translation<T, D> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let precision = f.precision().unwrap_or(3);
 
         writeln!(f, "Translation {{")?;

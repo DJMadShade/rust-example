@@ -4,11 +4,11 @@ use serde::{Deserialize, Serialize};
 use crate::allocator::Allocator;
 use crate::base::{DefaultAllocator, Matrix, OMatrix, OVector, Unit};
 use crate::dimension::{Const, Dim, DimDiff, DimMin, DimMinimum, DimSub, U1};
+use crate::storage::Storage;
 use simba::scalar::ComplexField;
 
 use crate::geometry::Reflection;
 use crate::linalg::householder;
-use std::mem::MaybeUninit;
 
 /// The bidiagonalization of a general matrix.
 #[cfg_attr(feature = "serde-serialize-no-std", derive(Serialize, Deserialize))]
@@ -73,7 +73,7 @@ where
 {
     /// Computes the Bidiagonal decomposition using householder reflections.
     pub fn new(mut matrix: OMatrix<T, R, C>) -> Self {
-        let (nrows, ncols) = matrix.shape_generic();
+        let (nrows, ncols) = matrix.data.shape();
         let min_nrows_ncols = nrows.min(ncols);
         let dim = min_nrows_ncols.value();
         assert!(
@@ -81,64 +81,67 @@ where
             "Cannot compute the bidiagonalization of an empty matrix."
         );
 
-        let mut diagonal = Matrix::uninit(min_nrows_ncols, Const::<1>);
-        let mut off_diagonal = Matrix::uninit(min_nrows_ncols.sub(Const::<1>), Const::<1>);
-        let mut axis_packed = Matrix::zeros_generic(ncols, Const::<1>);
-        let mut work = Matrix::zeros_generic(nrows, Const::<1>);
+        let mut diagonal =
+            unsafe { crate::unimplemented_or_uninitialized_generic!(min_nrows_ncols, Const::<1>) };
+        let mut off_diagonal = unsafe {
+            crate::unimplemented_or_uninitialized_generic!(
+                min_nrows_ncols.sub(Const::<1>),
+                Const::<1>
+            )
+        };
+        let mut axis_packed =
+            unsafe { crate::unimplemented_or_uninitialized_generic!(ncols, Const::<1>) };
+        let mut work = unsafe { crate::unimplemented_or_uninitialized_generic!(nrows, Const::<1>) };
 
         let upper_diagonal = nrows.value() >= ncols.value();
         if upper_diagonal {
             for ite in 0..dim - 1 {
-                diagonal[ite] = MaybeUninit::new(householder::clear_column_unchecked(
+                householder::clear_column_unchecked(&mut matrix, &mut diagonal[ite], ite, 0, None);
+                householder::clear_row_unchecked(
                     &mut matrix,
-                    ite,
-                    0,
-                    None,
-                ));
-                off_diagonal[ite] = MaybeUninit::new(householder::clear_row_unchecked(
-                    &mut matrix,
+                    &mut off_diagonal[ite],
                     &mut axis_packed,
                     &mut work,
                     ite,
                     1,
-                ));
+                );
             }
 
-            diagonal[dim - 1] = MaybeUninit::new(householder::clear_column_unchecked(
+            householder::clear_column_unchecked(
                 &mut matrix,
+                &mut diagonal[dim - 1],
                 dim - 1,
                 0,
                 None,
-            ));
+            );
         } else {
             for ite in 0..dim - 1 {
-                diagonal[ite] = MaybeUninit::new(householder::clear_row_unchecked(
+                householder::clear_row_unchecked(
                     &mut matrix,
+                    &mut diagonal[ite],
                     &mut axis_packed,
                     &mut work,
                     ite,
                     0,
-                ));
-                off_diagonal[ite] = MaybeUninit::new(householder::clear_column_unchecked(
+                );
+                householder::clear_column_unchecked(
                     &mut matrix,
+                    &mut off_diagonal[ite],
                     ite,
                     1,
                     None,
-                ));
+                );
             }
 
-            diagonal[dim - 1] = MaybeUninit::new(householder::clear_row_unchecked(
+            householder::clear_row_unchecked(
                 &mut matrix,
+                &mut diagonal[dim - 1],
                 &mut axis_packed,
                 &mut work,
                 dim - 1,
                 0,
-            ));
+            );
         }
-
-        // Safety: diagonal and off_diagonal have been fully initialized.
-        let (diagonal, off_diagonal) =
-            unsafe { (diagonal.assume_init(), off_diagonal.assume_init()) };
 
         Bidiagonal {
             uv: matrix,
@@ -150,7 +153,6 @@ where
 
     /// Indicates whether this decomposition contains an upper-diagonal matrix.
     #[inline]
-    #[must_use]
     pub fn is_upper_diagonal(&self) -> bool {
         self.upper_diagonal
     }
@@ -186,40 +188,30 @@ where
 
     /// Retrieves the upper trapezoidal submatrix `R` of this decomposition.
     #[inline]
-    #[must_use]
     pub fn d(&self) -> OMatrix<T, DimMinimum<R, C>, DimMinimum<R, C>>
     where
         DefaultAllocator: Allocator<T, DimMinimum<R, C>, DimMinimum<R, C>>,
     {
-        let (nrows, ncols) = self.uv.shape_generic();
+        let (nrows, ncols) = self.uv.data.shape();
 
         let d = nrows.min(ncols);
         let mut res = OMatrix::identity_generic(d, d);
-        res.set_partial_diagonal(
-            self.diagonal
-                .iter()
-                .map(|e| T::from_real(e.clone().modulus())),
-        );
+        res.set_partial_diagonal(self.diagonal.iter().map(|e| T::from_real(e.modulus())));
 
         let start = self.axis_shift();
         res.slice_mut(start, (d.value() - 1, d.value() - 1))
-            .set_partial_diagonal(
-                self.off_diagonal
-                    .iter()
-                    .map(|e| T::from_real(e.clone().modulus())),
-            );
+            .set_partial_diagonal(self.off_diagonal.iter().map(|e| T::from_real(e.modulus())));
         res
     }
 
     /// Computes the orthogonal matrix `U` of this `U * D * V` decomposition.
     // TODO: code duplication with householder::assemble_q.
     // Except that we are returning a rectangular matrix here.
-    #[must_use]
     pub fn u(&self) -> OMatrix<T, R, DimMinimum<R, C>>
     where
         DefaultAllocator: Allocator<T, R, DimMinimum<R, C>>,
     {
-        let (nrows, ncols) = self.uv.shape_generic();
+        let (nrows, ncols) = self.uv.data.shape();
 
         let mut res = Matrix::identity_generic(nrows, nrows.min(ncols));
         let dim = self.diagonal.len();
@@ -233,9 +225,9 @@ where
             let mut res_rows = res.slice_range_mut(i + shift.., i..);
 
             let sign = if self.upper_diagonal {
-                self.diagonal[i].clone().signum()
+                self.diagonal[i].signum()
             } else {
-                self.off_diagonal[i].clone().signum()
+                self.off_diagonal[i].signum()
             };
 
             refl.reflect_with_sign(&mut res_rows, sign);
@@ -245,17 +237,18 @@ where
     }
 
     /// Computes the orthogonal matrix `V_t` of this `U * D * V_t` decomposition.
-    #[must_use]
     pub fn v_t(&self) -> OMatrix<T, DimMinimum<R, C>, C>
     where
         DefaultAllocator: Allocator<T, DimMinimum<R, C>, C>,
     {
-        let (nrows, ncols) = self.uv.shape_generic();
+        let (nrows, ncols) = self.uv.data.shape();
         let min_nrows_ncols = nrows.min(ncols);
 
         let mut res = Matrix::identity_generic(min_nrows_ncols, ncols);
-        let mut work = Matrix::zeros_generic(min_nrows_ncols, Const::<1>);
-        let mut axis_packed = Matrix::zeros_generic(ncols, Const::<1>);
+        let mut work =
+            unsafe { crate::unimplemented_or_uninitialized_generic!(min_nrows_ncols, Const::<1>) };
+        let mut axis_packed =
+            unsafe { crate::unimplemented_or_uninitialized_generic!(ncols, Const::<1>) };
 
         let shift = self.axis_shift().1;
 
@@ -269,9 +262,9 @@ where
             let mut res_rows = res.slice_range_mut(i.., i + shift..);
 
             let sign = if self.upper_diagonal {
-                self.off_diagonal[i].clone().signum()
+                self.off_diagonal[i].signum()
             } else {
-                self.diagonal[i].clone().signum()
+                self.diagonal[i].signum()
             };
 
             refl.reflect_rows_with_sign(&mut res_rows, &mut work.rows_range_mut(i..), sign);
@@ -281,7 +274,6 @@ where
     }
 
     /// The diagonal part of this decomposed matrix.
-    #[must_use]
     pub fn diagonal(&self) -> OVector<T::RealField, DimMinimum<R, C>>
     where
         DefaultAllocator: Allocator<T::RealField, DimMinimum<R, C>>,
@@ -290,7 +282,6 @@ where
     }
 
     /// The off-diagonal part of this decomposed matrix.
-    #[must_use]
     pub fn off_diagonal(&self) -> OVector<T::RealField, DimDiff<DimMinimum<R, C>, U1>>
     where
         DefaultAllocator: Allocator<T::RealField, DimDiff<DimMinimum<R, C>, U1>>,
@@ -356,7 +347,7 @@ where
 //         assert!(self.uv.is_square(), "Bidiagonal inverse: unable to compute the inverse of a non-square matrix.");
 //
 //         // TODO: is there a less naive method ?
-//         let (nrows, ncols) = self.uv.shape_generic();
+//         let (nrows, ncols) = self.uv.data.shape();
 //         let mut res = OMatrix::identity_generic(nrows, ncols);
 //         self.solve_mut(&mut res);
 //         res

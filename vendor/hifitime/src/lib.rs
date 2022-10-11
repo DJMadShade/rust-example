@@ -1,15 +1,129 @@
-#![doc = include_str!("../README.md")]
-#![cfg_attr(not(feature = "std"), no_std)]
-
-/*
- * Hifitime, part of the Nyx Space tools
- * Copyright (C) 2022 Christopher Rabotin <christopher.rabotin@gmail.com> et al. (cf. AUTHORS.md)
- * This Source Code Form is subject to the terms of the Apache
- * v. 2.0. If a copy of the Apache License was not distributed with this
- * file, You can obtain one at https://www.apache.org/licenses/LICENSE-2.0.
- *
- * Documentation: https://nyxspace.com/
- */
+//! # hifitime
+//!
+//! Precise date and time handling in Rust built on top of a simple f64.
+//! The Epoch used is TAI Epoch of 01 Jan 1900 at midnight.
+//!
+//! ## Features
+//!
+//!  * Leap seconds (as announced by the IETF on a yearly basis)
+//!  * Julian dates and Modified Julian dates
+//!  * Clock drift via oscillator stability for simulation of time measuring hardware (via the `simulation` feature)
+//!  * UTC representation with ISO8601 formatting (and parsing in that format #45)
+//!  * High fidelity Ephemeris Time / Dynamic Barycentric Time (TDB) computations from [ESA's Navipedia](https://gssc.esa.int/navipedia/index.php/Transformations_between_Time_Systems#TDT_-_TDB.2C_TCB) (caveat: up to 10ms difference with SPICE near 01 Jan 2000)
+//!  * Trivial support of time arithmetic (e.g. `2 * TimeUnit::Hour + TimeUnit::Second * 3`)
+//!  * Supports ranges of Epochs and TimeSeries (linspace of `Epoch`s and `Duration`s)
+//!
+//! Almost all examples are validated with external references, as detailed on a test-by-test
+//! basis.
+//!
+//! ### Leap second support
+//! Each time computing library may decide when the extra leap second exists as explained
+//! in the [IETF leap second reference](https://www.ietf.org/timezones/data/leap-seconds.list).
+//! To ease computation, `hifitime` decides that second is the 60th of a UTC date, if such exists.
+//! Note that this second exists at a different time than defined on
+//! [NASA HEASARC](https://heasarc.gsfc.nasa.gov/cgi-bin/Tools/xTime/xTime.pl?). That tool is
+//! used for validation of Julian dates. As an example of how this is handled, check the Julian
+//! day computations for [2015-06-30 23:59:59](https://heasarc.gsfc.nasa.gov/cgi-bin/Tools/xTime/xTime.pl?time_in_i=2015-06-30+23%3A59%3A59&time_in_c=&time_in_d=&time_in_j=&time_in_m=&time_in_sf=&time_in_wf=&time_in_sl=&time_in_snu=&time_in_s=&time_in_h=&time_in_n=&time_in_f=&time_in_sz=&time_in_ss=&time_in_sn=&timesys_in=u&timesys_out=u&apply_clock_offset=yes),
+//! [2015-06-30 23:59:60](https://heasarc.gsfc.nasa.gov/cgi-bin/Tools/xTime/xTime.pl?time_in_i=2015-06-30+23%3A59%3A60&time_in_c=&time_in_d=&time_in_j=&time_in_m=&time_in_sf=&time_in_wf=&time_in_sl=&time_in_snu=&time_in_s=&time_in_h=&time_in_n=&time_in_f=&time_in_sz=&time_in_ss=&time_in_sn=&timesys_in=u&timesys_out=u&apply_clock_offset=yes)
+//! and [2015-07-01 00:00:00](https://heasarc.gsfc.nasa.gov/cgi-bin/Tools/xTime/xTime.pl?time_in_i=2015-07-01+00%3A00%3A00&time_in_c=&time_in_d=&time_in_j=&time_in_m=&time_in_sf=&time_in_wf=&time_in_sl=&time_in_snu=&time_in_s=&time_in_h=&time_in_n=&time_in_f=&time_in_sz=&time_in_ss=&time_in_sn=&timesys_in=u&timesys_out=u&apply_clock_offset=yes).
+//!
+//! ## Does not include
+//!
+//! * Dates only, or times only (i.e. handles only the combination of both), but the `Datetime::{at_midnight, at_noon}` help
+//! * Custom formatting of date time objects
+//! * An initializer from machine time
+//!
+//! ## Usage
+//!
+//! Put this in your `Cargo.toml`:
+//!
+//! ```toml
+//! [dependencies]
+//! hifitime = "2"
+//! ```
+//!
+//! And add the following to your crate root:
+//!
+//! ```rust
+//! extern crate hifitime;
+//! ```
+//!
+//! ### Examples:
+//!
+//! #### Time creation
+//! ```rust
+//! use hifitime::{Epoch, TimeUnit};
+//! use std::str::FromStr;
+//!
+//! let mut santa = Epoch::from_gregorian_utc(2017, 12, 25, 01, 02, 14, 0);
+//! assert_eq!(santa.as_mjd_utc_days(), 58112.043217592590);
+//! assert_eq!(santa.as_jde_utc_days(), 2458112.5432175924);
+//!
+//! santa += 3600 * TimeUnit::Second;
+//! assert_eq!(
+//!     santa,
+//!     Epoch::from_gregorian_utc(2017, 12, 25, 02, 02, 14, 0),
+//!     "Could not add one hour to Christmas"
+//! );
+//!
+//! let dt = Epoch::from_gregorian_utc(2017, 1, 14, 0, 31, 55, 0);
+//! assert_eq!(dt, Epoch::from_str("2017-01-14T00:31:55 UTC").unwrap());
+//! // And you can print it too, although by default it will print in UTC
+//! assert_eq!(dt.as_gregorian_utc_str(), "2017-01-14T00:31:55 UTC".to_string());
+//! assert_eq!(format!("{}", dt), "2017-01-14T00:31:55 UTC".to_string());
+//! ```
+//!
+//! #### Time differences, time unit, and duration handling
+//! Comparing times will lead to a Duration type. Printing that will automatically select the unit.
+//! ```rust
+//! use hifitime::{Epoch, TimeUnit, Duration};
+//!
+//! let at_midnight = Epoch::from_gregorian_utc_at_midnight(2020, 11, 2);
+//! let at_noon = Epoch::from_gregorian_utc_at_noon(2020, 11, 2);
+//! assert_eq!(at_noon - at_midnight, 12 * TimeUnit::Hour);
+//! assert_eq!(at_noon - at_midnight, 1 * TimeUnit::Day / 2);
+//! assert_eq!(at_midnight - at_noon, -1 * TimeUnit::Day / 2);
+//!
+//! let delta_time = at_noon - at_midnight;
+//! // assert_eq!(format!("{}", delta_time), "12 h 0 min 0 s".to_string());
+//! // And we can multiply durations by a scalar...
+//! let delta2 = 2 * delta_time;
+//! // assert_eq!(format!("{}", delta2), "1 days 0 h 0 min 0 s".to_string());
+//! // Or divide them by a scalar.
+//! // assert_eq!(format!("{}", delta2 / 2.0), "12 h 0 min 0 s".to_string());
+//!
+//! // And of course, these comparisons account for differences in time systems
+//! let at_midnight_utc = Epoch::from_gregorian_utc_at_midnight(2020, 11, 2);
+//! let at_noon_tai = Epoch::from_gregorian_tai_at_noon(2020, 11, 2);
+//! // assert_eq!(format!("{}", at_noon_tai - at_midnight_utc), "11 h 59 min 23 s".to_string());
+//! ```
+//!
+//! #### Iterating over times ("linspace" of epochs)
+//! Finally, something which may come in very handy, line spaces between times with a given step.
+//!
+//! ```rust
+//! use hifitime::{Epoch, TimeUnit, TimeSeries};
+//! let start = Epoch::from_gregorian_utc_at_midnight(2017, 1, 14);
+//! let end = Epoch::from_gregorian_utc_at_noon(2017, 1, 14);
+//! let step = 2 * TimeUnit::Hour;
+//! let time_series = TimeSeries::inclusive(start, end, step);
+//! let mut cnt = 0;
+//! for epoch in time_series {
+//!     println!("{}", epoch);
+//!     cnt += 1
+//! }
+//! // Check that there are indeed six two-hour periods in a half a day,
+//! // including start and end times.
+//! assert_eq!(cnt, 7)
+//! ```
+//!
+//! ### Limitations
+//! Barycentric Dynamical Time is computed using the [ESA Navipedia reference](https://gssc.esa.int/navipedia/index.php/Transformations_between_Time_Systems).
+//! In three separate examples, the error with SPICE Ephemeris Time is the following:
+//!     * -9.536743e-07 seconds for 2012-Feb-7 11:22:33 UTC
+//!     * -3.814697e-06 seconds for 2002-Feb-7 midnight UTC
+//!     * -4.291534e-06 seconds for 1996-Feb-7 11:22:33 UTC
+//!
 
 pub const J1900_NAIF: f64 = 2_415_020.0;
 pub const J2000_NAIF: f64 = 2_451_545.0;
@@ -23,7 +137,7 @@ pub const J1900_OFFSET: f64 = 15_020.0;
 /// Modified Julian Day at 17 November 1858.
 pub const J2000_OFFSET: f64 = 51_544.5;
 /// The Ephemeris Time epoch, in seconds
-pub const ET_EPOCH_S: i64 = 3_155_716_800;
+pub const ET_EPOCH_S: f64 = 3_155_716_800.0;
 /// Modified Julian Date in seconds as defined [here](http://tycho.usno.navy.mil/mjd.html). MJD epoch is Modified Julian Day at 17 November 1858 at midnight.
 pub const MJD_OFFSET: f64 = 2_400_000.5;
 /// The JDE offset in days
@@ -32,47 +146,23 @@ pub const JDE_OFFSET_DAYS: f64 = J1900_OFFSET + MJD_OFFSET;
 pub const JDE_OFFSET_SECONDS: f64 = JDE_OFFSET_DAYS * SECONDS_PER_DAY;
 /// `DAYS_PER_YEAR` corresponds to the number of days per year in the Julian calendar.
 pub const DAYS_PER_YEAR: f64 = 365.25;
-/// `DAYS_PER_YEAR_NLD` corresponds to the number of days per year **without leap days**.
-pub const DAYS_PER_YEAR_NLD: f64 = 365.0;
 /// `DAYS_PER_CENTURY` corresponds to the number of days per centuy in the Julian calendar.
 pub const DAYS_PER_CENTURY: f64 = 36525.0;
-pub const DAYS_PER_CENTURY_I64: i64 = 36525;
 /// `SECONDS_PER_MINUTE` defines the number of seconds per minute.
 pub const SECONDS_PER_MINUTE: f64 = 60.0;
 /// `SECONDS_PER_HOUR` defines the number of seconds per hour.
 pub const SECONDS_PER_HOUR: f64 = 3_600.0;
 /// `SECONDS_PER_DAY` defines the number of seconds per day.
 pub const SECONDS_PER_DAY: f64 = 86_400.0;
-pub const SECONDS_PER_DAY_I64: i64 = 86_400;
-/// `SECONDS_PER_CENTURY` defines the number of seconds per century.
-pub const SECONDS_PER_CENTURY: f64 = SECONDS_PER_DAY * DAYS_PER_CENTURY;
 /// `SECONDS_PER_YEAR` corresponds to the number of seconds per julian year from [NAIF SPICE](https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/jyear_c.html).
 pub const SECONDS_PER_YEAR: f64 = 31_557_600.0;
-pub const SECONDS_PER_YEAR_I64: i64 = 31_557_600;
 /// `SECONDS_PER_TROPICAL_YEAR` corresponds to the number of seconds per tropical year from [NAIF SPICE](https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/tyear_c.html).
 pub const SECONDS_PER_TROPICAL_YEAR: f64 = 31_556_925.974_7;
 /// `SECONDS_PER_SIDERAL_YEAR` corresponds to the number of seconds per sideral year from [NIST](https://www.nist.gov/pml/special-publication-811/nist-guide-si-appendix-b-conversion-factors/nist-guide-si-appendix-b9#TIME).
 pub const SECONDS_PER_SIDERAL_YEAR: f64 = 31_558_150.0;
-/// `SECONDS_GPS_TAI_OFFSET` is the number of seconds from the TAI epoch to the
-/// GPS epoch (UTC midnight of January 6th 1980; cf. <https://gssc.esa.int/navipedia/index.php/Time_References_in_GNSS#GPS_Time_.28GPST.29>)
-pub const SECONDS_GPS_TAI_OFFSET: f64 = 80.0 * SECONDS_PER_YEAR + 4.0 * SECONDS_PER_DAY + 19.0;
-pub const SECONDS_GPS_TAI_OFFSET_I64: i64 =
-    80 * SECONDS_PER_YEAR_I64 + 4 * SECONDS_PER_DAY_I64 + 19;
-/// `DAYS_GPS_TAI_OFFSET` is the number of days from the TAI epoch to the GPS
-/// epoch (UTC midnight of January 6th 1980; cf. <https://gssc.esa.int/navipedia/index.php/Time_References_in_GNSS#GPS_Time_.28GPST.29>)
-pub const DAYS_GPS_TAI_OFFSET: f64 = SECONDS_GPS_TAI_OFFSET / SECONDS_PER_DAY;
 
-/// The UNIX reference epoch of 1970-01-01 in TAI duration, accounting only for IERS leap seconds.
-pub const UNIX_REF_EPOCH: Epoch = Epoch::from_tai_duration(Duration {
-    centuries: 0,
-    nanoseconds: 2_208_988_800_000_000_000,
-});
-
-/// The duration between J2000 and J1900: one century **minus** twelve hours. J1900 starts at  _noon_ but J2000 is at midnight.
-pub const J2000_TO_J1900_DURATION: Duration = Duration {
-    centuries: 0,
-    nanoseconds: 3155716800000000000,
-};
+mod sim;
+pub use sim::ClockNoise;
 
 mod epoch;
 
@@ -86,34 +176,17 @@ mod timeseries;
 pub use timeseries::*;
 
 pub mod prelude {
-    pub use {Duration, Epoch, Freq, Frequencies, TimeSeries, TimeUnits, Unit};
+    pub use {Duration, Epoch, TimeSeries, TimeUnit, TimeUnitHelper};
 }
 
-#[cfg(feature = "asn1der")]
-pub mod asn1der;
-
-extern crate num_traits;
-
-#[cfg(feature = "std")]
-extern crate serde;
-
-#[cfg(feature = "std")]
-extern crate core;
-
-use core::convert;
-use core::fmt;
-use core::num::ParseIntError;
-use core::str::FromStr;
-
-#[cfg(feature = "std")]
-extern crate regex;
-#[cfg(feature = "std")]
-extern crate serde_derive;
-#[cfg(feature = "std")]
+use std::convert;
 use std::error::Error;
+use std::fmt;
+use std::num::ParseIntError;
+use std::str::FromStr;
 
 /// Errors handles all oddities which may occur in this library.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Errors {
     /// Carry is returned when a provided function does not support time carry. For example,
     /// if a call to `Datetime::new` receives 60 seconds and there are only 59 seconds in the provided
@@ -121,53 +194,33 @@ pub enum Errors {
     Carry,
     /// ParseError is returned when a provided string could not be parsed and converted to the desired
     /// struct (e.g. Datetime).
-    ParseError(ParsingErrors),
+    ParseError(String),
     /// Raised when trying to initialize an Epoch or Duration from its hi and lo values, but these overlap
     ConversionOverlapError(f64, f64),
-    /// Raised if an overflow occured
-    Overflow,
-    /// Raised if the initialization from system time failed
-    SystemTimeError,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum ParsingErrors {
-    ParseIntError,
-    TimeSystem,
-    ISO8601,
-    UnknownFormat,
-    UnknownUnit,
-    UnsupportedTimeSystem,
 }
 
 impl fmt::Display for Errors {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Self::Carry => write!(f, "a carry error (e.g. 61 seconds)"),
-            Self::ParseError(kind) => write!(f, "ParseError: {:?}", kind),
-            Self::ConversionOverlapError(hi, lo) => {
+            Errors::Carry => write!(f, "a carry error (e.g. 61 seconds)"),
+            Errors::ParseError(ref msg) => write!(f, "ParseError: {}", msg),
+            Errors::ConversionOverlapError(hi, lo) => {
                 write!(f, "hi and lo values overlap: {}, {}", hi, lo)
             }
-            Self::Overflow => write!(
-                f,
-                "overflow occured when trying to convert Duration information"
-            ),
-            Self::SystemTimeError => write!(f, "std::time::SystemTime returned an error"),
         }
     }
 }
 
 impl convert::From<ParseIntError> for Errors {
-    fn from(_: ParseIntError) -> Self {
-        Errors::ParseError(ParsingErrors::ParseIntError)
+    fn from(error: ParseIntError) -> Self {
+        Errors::ParseError(format!("std::num::ParseIntError encountered: {}", error))
     }
 }
 
-#[cfg(feature = "std")]
 impl Error for Errors {}
 
 /// Enum of the different time systems available
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub enum TimeSystem {
     /// Ephemeris Time as defined by SPICE (slightly different from true TDB)
     ET,
@@ -177,36 +230,7 @@ pub enum TimeSystem {
     TT,
     /// Dynamic Barycentric Time (TDB) (higher fidelity SPICE ephemeris time)
     TDB,
-    /// Universal Coordinated Time
     UTC,
-}
-
-/// Allows conversion of a TimeSystem into a u8
-/// Mapping: TAI: 0; TT: 1; ET: 2; TDB: 3; UTC: 4.
-impl From<TimeSystem> for u8 {
-    fn from(ts: TimeSystem) -> Self {
-        match ts {
-            TimeSystem::TAI => 0,
-            TimeSystem::TT => 1,
-            TimeSystem::ET => 2,
-            TimeSystem::TDB => 3,
-            TimeSystem::UTC => 4,
-        }
-    }
-}
-
-/// Allows conversion of a u8 into a TimeSystem.
-/// Mapping: 1: TT; 2: ET; 3: TDB; 4: UTC; anything else: TAI
-impl From<u8> for TimeSystem {
-    fn from(val: u8) -> Self {
-        match val {
-            1 => TimeSystem::TT,
-            2 => TimeSystem::ET,
-            3 => TimeSystem::TDB,
-            4 => TimeSystem::UTC,
-            _ => TimeSystem::TAI,
-        }
-    }
 }
 
 impl FromStr for TimeSystem {
@@ -224,33 +248,15 @@ impl FromStr for TimeSystem {
         } else if val == "ET" {
             Ok(TimeSystem::ET)
         } else {
-            Err(Errors::ParseError(ParsingErrors::TimeSystem))
+            Err(Errors::ParseError(format!("unknown time system `{}`", val)))
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{Errors, ParsingErrors, TimeSystem};
-
-    #[test]
-    fn enum_eq() {
-        // Check the equality compiles (if one compiles, then all asserts will work)
-        assert!(Errors::Carry == Errors::Carry);
-        assert!(ParsingErrors::ParseIntError == ParsingErrors::ParseIntError);
-        assert!(TimeSystem::ET == TimeSystem::ET);
     }
 }
 
 #[test]
-fn test_ts() {
-    for ts_u8 in 0..u8::MAX {
-        let ts = TimeSystem::from(ts_u8);
-        let ts_u8_back: u8 = ts.into();
-        if ts_u8 < 5 {
-            // If the u8 is greater than 5, it isn't valid and necessarily encoded as TAI.
-            // This may therefore be a different u8 than in ts_u8.
-            assert_eq!(ts_u8_back, ts_u8, "got {ts_u8_back} want {ts_u8}");
-        }
-    }
+fn error_unittest() {
+    assert_eq!(
+        format!("{}", Errors::Carry),
+        "a carry error (e.g. 61 seconds)"
+    );
 }

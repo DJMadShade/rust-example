@@ -69,11 +69,11 @@ where
     /// Creates a new sequence of D identity permutations.
     #[inline]
     pub fn identity_generic(dim: D) -> Self {
-        Self {
-            len: 0,
-            // TODO: using a uninitialized matrix would save some computation, but
-            //       that loos difficult to setup with MaybeUninit.
-            ipiv: Matrix::repeat_generic(dim, Const::<1>, (0, 0)),
+        unsafe {
+            Self {
+                len: 0,
+                ipiv: crate::unimplemented_or_uninitialized_generic!(dim, Const::<1>),
+            }
         }
     }
 
@@ -140,20 +140,17 @@ where
     }
 
     /// The number of non-identity permutations applied by this sequence.
-    #[must_use]
     pub fn len(&self) -> usize {
         self.len
     }
 
     /// Returns true if the permutation sequence contains no elements.
-    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// The determinant of the matrix corresponding to this permutation.
     #[inline]
-    #[must_use]
     pub fn determinant<T: One + ClosedNeg>(&self) -> T {
         if self.len % 2 == 0 {
             T::one()

@@ -1,3 +1,4 @@
+use std::mem;
 use std::ops::{Deref, DerefMut};
 
 use simba::simd::SimdValue;
@@ -12,13 +13,13 @@ impl<T: Scalar + SimdValue> Deref for Quaternion<T> {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        unsafe { &*(self as *const Self as *const Self::Target) }
+        unsafe { mem::transmute(self) }
     }
 }
 
 impl<T: Scalar + SimdValue> DerefMut for Quaternion<T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *(self as *mut Self as *mut Self::Target) }
+        unsafe { mem::transmute(self) }
     }
 }

@@ -48,14 +48,6 @@ mod translation_coordinates;
 mod translation_ops;
 mod translation_simba;
 
-mod scale;
-mod scale_alias;
-mod scale_construction;
-mod scale_conversion;
-mod scale_coordinates;
-mod scale_ops;
-mod scale_simba;
-
 mod isometry;
 mod isometry_alias;
 mod isometry_construction;
@@ -81,7 +73,6 @@ mod transform_ops;
 mod transform_simba;
 
 mod reflection;
-mod reflection_alias;
 
 mod orthographic;
 mod perspective;
@@ -103,9 +94,6 @@ pub use self::unit_complex::*;
 pub use self::translation::*;
 pub use self::translation_alias::*;
 
-pub use self::scale::*;
-pub use self::scale_alias::*;
-
 pub use self::isometry::*;
 pub use self::isometry_alias::*;
 
@@ -116,7 +104,6 @@ pub use self::transform::*;
 pub use self::transform_alias::*;
 
 pub use self::reflection::*;
-pub use self::reflection_alias::*;
 
 pub use self::orthographic::Orthographic3;
 pub use self::perspective::Perspective3;

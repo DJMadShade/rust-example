@@ -6,7 +6,6 @@ use crate::{Const, DefaultAllocator, Dim, Matrix, OMatrix, OVector, RealField};
 
 impl<T: RealField, D: Dim, S: CsStorage<T, D, D>> CsMatrix<T, D, D, S> {
     /// Solve a lower-triangular system with a dense right-hand-side.
-    #[must_use = "Did you mean to use solve_lower_triangular_mut()?"]
     pub fn solve_lower_triangular<R2: Dim, C2: Dim, S2>(
         &self,
         b: &Matrix<T, R2, C2, S2>,
@@ -25,7 +24,6 @@ impl<T: RealField, D: Dim, S: CsStorage<T, D, D>> CsMatrix<T, D, D, S> {
     }
 
     /// Solve a lower-triangular system with `self` transposed and a dense right-hand-side.
-    #[must_use = "Did you mean to use tr_solve_lower_triangular_mut()?"]
     pub fn tr_solve_lower_triangular<R2: Dim, C2: Dim, S2>(
         &self,
         b: &Matrix<T, R2, C2, S2>,
@@ -63,7 +61,7 @@ impl<T: RealField, D: Dim, S: CsStorage<T, D, D>> CsMatrix<T, D, D, S> {
                 let mut column = self.data.column_entries(j);
                 let mut diag_found = false;
 
-                for (i, val) in &mut column {
+                while let Some((i, val)) = column.next() {
                     if i == j {
                         if val.is_zero() {
                             return false;
@@ -80,7 +78,7 @@ impl<T: RealField, D: Dim, S: CsStorage<T, D, D>> CsMatrix<T, D, D, S> {
                 }
 
                 for (i, val) in column {
-                    let bj = b[j].clone();
+                    let bj = b[j];
                     b[i] -= bj * val;
                 }
             }
@@ -109,7 +107,7 @@ impl<T: RealField, D: Dim, S: CsStorage<T, D, D>> CsMatrix<T, D, D, S> {
                 let mut column = self.data.column_entries(j);
                 let mut diag = None;
 
-                for (i, val) in &mut column {
+                while let Some((i, val)) = column.next() {
                     if i == j {
                         if val.is_zero() {
                             return false;
@@ -122,7 +120,7 @@ impl<T: RealField, D: Dim, S: CsStorage<T, D, D>> CsMatrix<T, D, D, S> {
 
                 if let Some(diag) = diag {
                     for (i, val) in column {
-                        let bi = b[i].clone();
+                        let bi = b[i];
                         b[j] -= val * bi;
                     }
 
@@ -137,7 +135,6 @@ impl<T: RealField, D: Dim, S: CsStorage<T, D, D>> CsMatrix<T, D, D, S> {
     }
 
     /// Solve a lower-triangular system with a sparse right-hand-side.
-    #[must_use]
     pub fn solve_lower_triangular_cs<D2: Dim, S2>(
         &self,
         b: &CsVector<T, D2, S2>,
@@ -151,8 +148,9 @@ impl<T: RealField, D: Dim, S: CsStorage<T, D, D>> CsMatrix<T, D, D, S> {
         // We don't compute a postordered reach here because it will be sorted after anyway.
         self.lower_triangular_reach(b, &mut reach);
         // We sort the reach so the result matrix has sorted indices.
-        reach.sort_unstable();
-        let mut workspace = Matrix::zeros_generic(b.data.shape().0, Const::<1>);
+        reach.sort();
+        let mut workspace =
+            unsafe { crate::unimplemented_or_uninitialized_generic!(b.data.shape().0, Const::<1>) };
 
         for i in reach.iter().cloned() {
             workspace[i] = T::zero();
@@ -166,7 +164,7 @@ impl<T: RealField, D: Dim, S: CsStorage<T, D, D>> CsMatrix<T, D, D, S> {
             let mut column = self.data.column_entries(j);
             let mut diag_found = false;
 
-            for (i, val) in &mut column {
+            while let Some((i, val)) = column.next() {
                 if i == j {
                     if val.is_zero() {
                         break;
@@ -183,7 +181,7 @@ impl<T: RealField, D: Dim, S: CsStorage<T, D, D>> CsMatrix<T, D, D, S> {
             }
 
             for (i, val) in column {
-                let wj = workspace[j].clone();
+                let wj = workspace[j];
                 workspace[i] -= wj * val;
             }
         }
@@ -193,7 +191,7 @@ impl<T: RealField, D: Dim, S: CsStorage<T, D, D>> CsMatrix<T, D, D, S> {
             CsVector::new_uninitialized_generic(b.data.shape().0, Const::<1>, reach.len());
 
         for (i, val) in reach.iter().zip(result.data.vals.iter_mut()) {
-            *val = workspace[*i].clone();
+            *val = workspace[*i];
         }
 
         result.data.i = reach;

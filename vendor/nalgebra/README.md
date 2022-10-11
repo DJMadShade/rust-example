@@ -9,7 +9,7 @@
         <img src="https://circleci.com/gh/dimforge/nalgebra.svg?style=svg" alt="Build status">
     </a>
     <a href="https://crates.io/crates/nalgebra">
-         <img src="https://img.shields.io/crates/v/nalgebra.svg?style=flat-square" alt="crates.io">
+         <img src="https://meritbadge.herokuapp.com/nalgebra?style=flat-square" alt="crates.io">
     </a>
     <a href="https://opensource.org/licenses/Apache-2.0">
         <img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg">
@@ -30,21 +30,10 @@
 
 -----
 
-## Acknowledgements
-nalgebra is supported by our **platinum** sponsors:
+## Platinum sponsors
+Rapier is supported by:
 <p>
   <a href="https://embark-studios.com">
-    <img src="https://www.embark.dev/img/logo_black.png" width="301px">
-  </a>
-</p>
-
-And our gold sponsors:
-
-<p>
-  <a href="https://fragcolor.com">
-    <img src="https://dimforge.com/img/fragcolor_logo2_color_black.svg" width="300px">
-  </a>
-  <a href="https://resolutiongames.com/">
-    <img src="https://dimforge.com/img/logo_resolution_games.png" width="300px" />
+    <img src="https://www.embark.dev/img/logo_black.png" width="401px">
   </a>
 </p>

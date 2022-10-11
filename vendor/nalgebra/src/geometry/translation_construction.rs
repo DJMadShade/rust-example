@@ -15,12 +15,6 @@ use simba::scalar::{ClosedAdd, SupersetOf};
 use crate::base::{SVector, Scalar};
 use crate::geometry::Translation;
 
-impl<T: Scalar + Zero, const D: usize> Default for Translation<T, D> {
-    fn default() -> Self {
-        Self::identity()
-    }
-}
-
 impl<T: Scalar, const D: usize> Translation<T, D> {
     /// Creates a new identity translation.
     ///
@@ -75,7 +69,7 @@ where
 {
     /// Generate an arbitrary random variate for testing purposes.
     #[inline]
-    fn sample<G: Rng + ?Sized>(&self, rng: &mut G) -> Translation<T, D> {
+    fn sample<'a, G: Rng + ?Sized>(&self, rng: &'a mut G) -> Translation<T, D> {
         Translation::from(rng.gen::<SVector<T, D>>())
     }
 }

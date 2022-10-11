@@ -1,5 +1,5 @@
 use crate::base::constraint::{AreMultipliable, DimEq, SameNumberOfRows, ShapeConstraint};
-use crate::base::{Const, Matrix, Unit, Vector};
+use crate::base::{Const, Matrix, Scalar, Unit, Vector};
 use crate::dimension::{Dim, U1};
 use crate::storage::{Storage, StorageMut};
 use simba::scalar::ComplexField;
@@ -7,7 +7,7 @@ use simba::scalar::ComplexField;
 use crate::geometry::Point;
 
 /// A reflection wrt. a plane.
-pub struct Reflection<T, D, S> {
+pub struct Reflection<T: Scalar, D: Dim, S: Storage<T, D>> {
     axis: Vector<T, D, S>,
     bias: T,
 }
@@ -22,7 +22,7 @@ impl<T: ComplexField, S: Storage<T, Const<D>>, const D: usize> Reflection<T, Con
 }
 
 impl<T: ComplexField, D: Dim, S: Storage<T, D>> Reflection<T, D, S> {
-    /// Creates a new reflection wrt. the plane orthogonal to the given axis and bias.
+    /// Creates a new reflection wrt the plane orthogonal to the given axis and bias.
     ///
     /// The bias is the position of the plane on the axis. In particular, a bias equal to zero
     /// represents a plane that passes through the origin.
@@ -33,19 +33,9 @@ impl<T: ComplexField, D: Dim, S: Storage<T, D>> Reflection<T, D, S> {
         }
     }
 
-    /// The reflection axis.
-    #[must_use]
+    /// The reflexion axis.
     pub fn axis(&self) -> &Vector<T, D, S> {
         &self.axis
-    }
-
-    /// The reflection bias.
-    ///
-    /// The bias is the position of the plane on the axis. In particular, a bias equal to zero
-    /// represents a plane that passes through the origin.
-    #[must_use]
-    pub fn bias(&self) -> T {
-        self.bias.clone()
     }
 
     // TODO: naming convention: reflect_to, reflect_assign ?
@@ -60,7 +50,7 @@ impl<T: ComplexField, D: Dim, S: Storage<T, D>> Reflection<T, D, S> {
             // dot product, and then mutably. Somehow, this allows significantly
             // better optimizations of the dot product from the compiler.
             let m_two: T = crate::convert(-2.0f64);
-            let factor = (self.axis.dotc(&rhs.column(i)) - self.bias.clone()) * m_two;
+            let factor = (self.axis.dotc(&rhs.column(i)) - self.bias) * m_two;
             rhs.column_mut(i).axpy(factor, &self.axis, T::one());
         }
     }
@@ -76,9 +66,9 @@ impl<T: ComplexField, D: Dim, S: Storage<T, D>> Reflection<T, D, S> {
             // NOTE: we borrow the column twice here. First it is borrowed immutably for the
             // dot product, and then mutably. Somehow, this allows significantly
             // better optimizations of the dot product from the compiler.
-            let m_two = sign.clone().scale(crate::convert(-2.0f64));
-            let factor = (self.axis.dotc(&rhs.column(i)) - self.bias.clone()) * m_two;
-            rhs.column_mut(i).axpy(factor, &self.axis, sign.clone());
+            let m_two = sign.scale(crate::convert(-2.0f64));
+            let factor = (self.axis.dotc(&rhs.column(i)) - self.bias) * m_two;
+            rhs.column_mut(i).axpy(factor, &self.axis, sign);
         }
     }
 
@@ -95,11 +85,11 @@ impl<T: ComplexField, D: Dim, S: Storage<T, D>> Reflection<T, D, S> {
         lhs.mul_to(&self.axis, work);
 
         if !self.bias.is_zero() {
-            work.add_scalar_mut(-self.bias.clone());
+            work.add_scalar_mut(-self.bias);
         }
 
         let m_two: T = crate::convert(-2.0f64);
-        lhs.gerc(m_two, work, &self.axis, T::one());
+        lhs.gerc(m_two, &work, &self.axis, T::one());
     }
 
     /// Applies the reflection to the rows of `lhs`.
@@ -116,10 +106,10 @@ impl<T: ComplexField, D: Dim, S: Storage<T, D>> Reflection<T, D, S> {
         lhs.mul_to(&self.axis, work);
 
         if !self.bias.is_zero() {
-            work.add_scalar_mut(-self.bias.clone());
+            work.add_scalar_mut(-self.bias);
         }
 
-        let m_two = sign.clone().scale(crate::convert(-2.0f64));
-        lhs.gerc(m_two, work, &self.axis, sign);
+        let m_two = sign.scale(crate::convert(-2.0f64));
+        lhs.gerc(m_two, &work, &self.axis, sign);
     }
 }

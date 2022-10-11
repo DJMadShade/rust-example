@@ -7,25 +7,20 @@ use std::ops::{
 use simba::scalar::{ClosedAdd, ClosedDiv, ClosedMul, ClosedNeg, ClosedSub};
 
 use crate::base::allocator::{Allocator, SameShapeAllocator, SameShapeC, SameShapeR};
-use crate::base::blas_uninit::gemm_uninit;
 use crate::base::constraint::{
     AreMultipliable, DimEq, SameNumberOfColumns, SameNumberOfRows, ShapeConstraint,
 };
 use crate::base::dimension::{Dim, DimMul, DimName, DimProd, Dynamic};
-use crate::base::storage::{Storage, StorageMut};
-use crate::base::uninit::Uninit;
+use crate::base::storage::{ContiguousStorageMut, Storage, StorageMut};
 use crate::base::{DefaultAllocator, Matrix, MatrixSum, OMatrix, Scalar, VectorSlice};
-use crate::storage::IsContiguous;
-use crate::uninit::{Init, InitStatus};
-use crate::{RawStorage, RawStorageMut, SimdComplexField};
-use std::mem::MaybeUninit;
+use crate::SimdComplexField;
 
 /*
  *
  * Indexing.
  *
  */
-impl<T, R: Dim, C: Dim, S: RawStorage<T, R, C>> Index<usize> for Matrix<T, R, C, S> {
+impl<T: Scalar, R: Dim, C: Dim, S: Storage<T, R, C>> Index<usize> for Matrix<T, R, C, S> {
     type Output = T;
 
     #[inline]
@@ -35,7 +30,11 @@ impl<T, R: Dim, C: Dim, S: RawStorage<T, R, C>> Index<usize> for Matrix<T, R, C,
     }
 }
 
-impl<T, R: Dim, C: Dim, S: RawStorage<T, R, C>> Index<(usize, usize)> for Matrix<T, R, C, S> {
+impl<T, R: Dim, C: Dim, S> Index<(usize, usize)> for Matrix<T, R, C, S>
+where
+    T: Scalar,
+    S: Storage<T, R, C>,
+{
     type Output = T;
 
     #[inline]
@@ -51,7 +50,7 @@ impl<T, R: Dim, C: Dim, S: RawStorage<T, R, C>> Index<(usize, usize)> for Matrix
 }
 
 // Mutable versions.
-impl<T, R: Dim, C: Dim, S: RawStorageMut<T, R, C>> IndexMut<usize> for Matrix<T, R, C, S> {
+impl<T: Scalar, R: Dim, C: Dim, S: StorageMut<T, R, C>> IndexMut<usize> for Matrix<T, R, C, S> {
     #[inline]
     fn index_mut(&mut self, i: usize) -> &mut T {
         let ij = self.vector_to_matrix_index(i);
@@ -59,7 +58,11 @@ impl<T, R: Dim, C: Dim, S: RawStorageMut<T, R, C>> IndexMut<usize> for Matrix<T,
     }
 }
 
-impl<T, R: Dim, C: Dim, S: RawStorageMut<T, R, C>> IndexMut<(usize, usize)> for Matrix<T, R, C, S> {
+impl<T, R: Dim, C: Dim, S> IndexMut<(usize, usize)> for Matrix<T, R, C, S>
+where
+    T: Scalar,
+    S: StorageMut<T, R, C>,
+{
     #[inline]
     fn index_mut(&mut self, ij: (usize, usize)) -> &mut T {
         let shape = self.shape();
@@ -116,7 +119,7 @@ where
     #[inline]
     pub fn neg_mut(&mut self) {
         for e in self.iter_mut() {
-            *e = -e.clone()
+            *e = -e.inlined_clone()
         }
     }
 }
@@ -131,7 +134,7 @@ macro_rules! componentwise_binop_impl(
     ($Trait: ident, $method: ident, $bound: ident;
      $TraitAssign: ident, $method_assign: ident, $method_assign_statically_unchecked: ident,
      $method_assign_statically_unchecked_rhs: ident;
-     $method_to: ident, $method_to_statically_unchecked_uninit: ident) => {
+     $method_to: ident, $method_to_statically_unchecked: ident) => {
 
         impl<T, R1: Dim, C1: Dim, SA: Storage<T, R1, C1>> Matrix<T, R1, C1, SA>
             where T: Scalar + $bound {
@@ -144,32 +147,33 @@ macro_rules! componentwise_binop_impl(
              *
              */
             #[inline]
-            fn $method_to_statically_unchecked_uninit<Status, R2: Dim, C2: Dim, SB,
-                                                       R3: Dim, C3: Dim, SC>(&self,
-                                                                     _status: Status,
+            fn $method_to_statically_unchecked<R2: Dim, C2: Dim, SB,
+                                               R3: Dim, C3: Dim, SC>(&self,
                                                                      rhs: &Matrix<T, R2, C2, SB>,
-                                                                     out: &mut Matrix<Status::Value, R3, C3, SC>)
-                where Status: InitStatus<T>,
-                      SB: RawStorage<T, R2, C2>,
-                      SC: RawStorageMut<Status::Value, R3, C3> {
+                                                                     out: &mut Matrix<T, R3, C3, SC>)
+                where SB: Storage<T, R2, C2>,
+                      SC: StorageMut<T, R3, C3> {
                 assert_eq!(self.shape(), rhs.shape(), "Matrix addition/subtraction dimensions mismatch.");
                 assert_eq!(self.shape(), out.shape(), "Matrix addition/subtraction output dimensions mismatch.");
 
                 // This is the most common case and should be deduced at compile-time.
                 // TODO: use specialization instead?
-                unsafe {
-                    if self.data.is_contiguous() && rhs.data.is_contiguous() && out.data.is_contiguous() {
-                        let arr1 = self.data.as_slice_unchecked();
-                        let arr2 = rhs.data.as_slice_unchecked();
-                        let out  = out.data.as_mut_slice_unchecked();
-                        for i in 0 .. arr1.len() {
-                            Status::init(out.get_unchecked_mut(i), arr1.get_unchecked(i).clone().$method(arr2.get_unchecked(i).clone()));
+                if self.data.is_contiguous() && rhs.data.is_contiguous() && out.data.is_contiguous() {
+                    let arr1 = self.data.as_slice();
+                    let arr2 = rhs.data.as_slice();
+                    let out  = out.data.as_mut_slice();
+                    for i in 0 .. arr1.len() {
+                        unsafe {
+                            *out.get_unchecked_mut(i) = arr1.get_unchecked(i).inlined_clone().$method(arr2.get_unchecked(i).inlined_clone());
                         }
-                    } else {
-                        for j in 0 .. self.ncols() {
-                            for i in 0 .. self.nrows() {
-                                let val = self.get_unchecked((i, j)).clone().$method(rhs.get_unchecked((i, j)).clone());
-                                Status::init(out.get_unchecked_mut((i, j)), val);
+                    }
+                }
+                else {
+                    for j in 0 .. self.ncols() {
+                        for i in 0 .. self.nrows() {
+                            unsafe {
+                                let val = self.get_unchecked((i, j)).inlined_clone().$method(rhs.get_unchecked((i, j)).inlined_clone());
+                                *out.get_unchecked_mut((i, j)) = val;
                             }
                         }
                     }
@@ -187,18 +191,20 @@ macro_rules! componentwise_binop_impl(
 
                 // This is the most common case and should be deduced at compile-time.
                 // TODO: use specialization instead?
-                unsafe {
-                    if self.data.is_contiguous() && rhs.data.is_contiguous() {
-                        let arr1 = self.data.as_mut_slice_unchecked();
-                        let arr2 = rhs.data.as_slice_unchecked();
-
-                        for i in 0 .. arr2.len() {
-                            arr1.get_unchecked_mut(i).$method_assign(arr2.get_unchecked(i).clone());
+                if self.data.is_contiguous() && rhs.data.is_contiguous() {
+                    let arr1 = self.data.as_mut_slice();
+                    let arr2 = rhs.data.as_slice();
+                    for i in 0 .. arr2.len() {
+                        unsafe {
+                            arr1.get_unchecked_mut(i).$method_assign(arr2.get_unchecked(i).inlined_clone());
                         }
-                    } else {
-                        for j in 0 .. rhs.ncols() {
-                            for i in 0 .. rhs.nrows() {
-                                self.get_unchecked_mut((i, j)).$method_assign(rhs.get_unchecked((i, j)).clone())
+                    }
+                }
+                else {
+                    for j in 0 .. rhs.ncols() {
+                        for i in 0 .. rhs.nrows() {
+                            unsafe {
+                                self.get_unchecked_mut((i, j)).$method_assign(rhs.get_unchecked((i, j)).inlined_clone())
                             }
                         }
                     }
@@ -215,20 +221,22 @@ macro_rules! componentwise_binop_impl(
 
                 // This is the most common case and should be deduced at compile-time.
                 // TODO: use specialization instead?
-                unsafe {
-                    if self.data.is_contiguous() && rhs.data.is_contiguous() {
-                        let arr1 = self.data.as_slice_unchecked();
-                        let arr2 = rhs.data.as_mut_slice_unchecked();
-
-                        for i in 0 .. arr1.len() {
-                            let res = arr1.get_unchecked(i).clone().$method(arr2.get_unchecked(i).clone());
+                if self.data.is_contiguous() && rhs.data.is_contiguous() {
+                    let arr1 = self.data.as_slice();
+                    let arr2 = rhs.data.as_mut_slice();
+                    for i in 0 .. arr1.len() {
+                        unsafe {
+                            let res = arr1.get_unchecked(i).inlined_clone().$method(arr2.get_unchecked(i).inlined_clone());
                             *arr2.get_unchecked_mut(i) = res;
                         }
-                    } else {
-                        for j in 0 .. self.ncols() {
-                            for i in 0 .. self.nrows() {
+                    }
+                }
+                else {
+                    for j in 0 .. self.ncols() {
+                        for i in 0 .. self.nrows() {
+                            unsafe {
                                 let r = rhs.get_unchecked_mut((i, j));
-                                *r = self.get_unchecked((i, j)).clone().$method(r.clone())
+                                *r = self.get_unchecked((i, j)).inlined_clone().$method(r.inlined_clone())
                             }
                         }
                     }
@@ -253,7 +261,7 @@ macro_rules! componentwise_binop_impl(
                       SC: StorageMut<T, R3, C3>,
                       ShapeConstraint: SameNumberOfRows<R1, R2> + SameNumberOfColumns<C1, C2> +
                                        SameNumberOfRows<R1, R3> + SameNumberOfColumns<C1, C3> {
-                self.$method_to_statically_unchecked_uninit(Init, rhs, out)
+                self.$method_to_statically_unchecked(rhs, out)
             }
         }
 
@@ -319,13 +327,15 @@ macro_rules! componentwise_binop_impl(
 
             #[inline]
             fn $method(self, rhs: &'b Matrix<T, R2, C2, SB>) -> Self::Output {
-                let (nrows, ncols) = self.shape();
-                let nrows: SameShapeR<R1, R2> = Dim::from_usize(nrows);
-                let ncols: SameShapeC<C1, C2> = Dim::from_usize(ncols);
-                let mut res = Matrix::uninit(nrows, ncols);
-                self.$method_to_statically_unchecked_uninit(Uninit, rhs, &mut res);
-                // SAFETY: the output has been initialized above.
-                unsafe { res.assume_init() }
+                let mut res = unsafe {
+                    let (nrows, ncols) = self.shape();
+                    let nrows: SameShapeR<R1, R2> = Dim::from_usize(nrows);
+                    let ncols: SameShapeC<C1, C2> = Dim::from_usize(ncols);
+                    crate::unimplemented_or_uninitialized_generic!(nrows, ncols)
+                };
+
+                self.$method_to_statically_unchecked(rhs, &mut res);
+                res
             }
         }
 
@@ -359,10 +369,10 @@ macro_rules! componentwise_binop_impl(
 
 componentwise_binop_impl!(Add, add, ClosedAdd;
                           AddAssign, add_assign, add_assign_statically_unchecked, add_assign_statically_unchecked_mut;
-                          add_to, add_to_statically_unchecked_uninit);
+                          add_to, add_to_statically_unchecked);
 componentwise_binop_impl!(Sub, sub, ClosedSub;
                           SubAssign, sub_assign, sub_assign_statically_unchecked, sub_assign_statically_unchecked_mut;
-                          sub_to, sub_to_statically_unchecked_uninit);
+                          sub_to, sub_to_statically_unchecked);
 
 impl<T, R: DimName, C: DimName> iter::Sum for OMatrix<T, R, C>
 where
@@ -472,7 +482,7 @@ macro_rules! componentwise_scalarop_impl(
 
                 // for left in res.iter_mut() {
                 for left in res.as_mut_slice().iter_mut() {
-                    *left = left.clone().$method(rhs.clone())
+                    *left = left.inlined_clone().$method(rhs.inlined_clone())
                 }
 
                 res
@@ -498,7 +508,7 @@ macro_rules! componentwise_scalarop_impl(
             fn $method_assign(&mut self, rhs: T) {
                 for j in 0 .. self.ncols() {
                     for i in 0 .. self.nrows() {
-                        unsafe { self.get_unchecked_mut((i, j)).$method_assign(rhs.clone()) };
+                        unsafe { self.get_unchecked_mut((i, j)).$method_assign(rhs.inlined_clone()) };
                     }
                 }
             }
@@ -526,7 +536,7 @@ macro_rules! left_scalar_mul_impl(
 
                 // for rhs in res.iter_mut() {
                 for rhs in res.as_mut_slice().iter_mut() {
-                    *rhs *= self
+                    *rhs = self * *rhs
                 }
 
                 res
@@ -561,12 +571,11 @@ where
 
     #[inline]
     fn mul(self, rhs: &'b Matrix<T, R2, C2, SB>) -> Self::Output {
-        let mut res = Matrix::uninit(self.shape_generic().0, rhs.shape_generic().1);
-        unsafe {
-            // SAFETY: this is OK because status = Uninit && bevy == 0
-            gemm_uninit(Uninit, &mut res, T::one(), self, rhs, T::zero());
-            res.assume_init()
-        }
+        let mut res = unsafe {
+            crate::unimplemented_or_uninitialized_generic!(self.data.shape().0, rhs.data.shape().1)
+        };
+        self.mul_to(rhs, &mut res);
+        res
     }
 }
 
@@ -631,7 +640,7 @@ where
     R2: Dim,
     T: Scalar + Zero + One + ClosedAdd + ClosedMul,
     SB: Storage<T, R2, C1>,
-    SA: StorageMut<T, R1, C1> + IsContiguous + Clone, // TODO: get rid of the IsContiguous
+    SA: ContiguousStorageMut<T, R1, C1> + Clone,
     ShapeConstraint: AreMultipliable<R1, C1, R2, C1>,
     DefaultAllocator: Allocator<T, R1, C1, Buffer = SA>,
 {
@@ -648,7 +657,7 @@ where
     R2: Dim,
     T: Scalar + Zero + One + ClosedAdd + ClosedMul,
     SB: Storage<T, R2, C1>,
-    SA: StorageMut<T, R1, C1> + IsContiguous + Clone, // TODO: get rid of the IsContiguous
+    SA: ContiguousStorageMut<T, R1, C1> + Clone,
     ShapeConstraint: AreMultipliable<R1, C1, R2, C1>,
     // TODO: this is too restrictive. See comments for the non-ref version.
     DefaultAllocator: Allocator<T, R1, C1, Buffer = SA>,
@@ -667,22 +676,22 @@ where
 {
     /// Equivalent to `self.transpose() * rhs`.
     #[inline]
-    #[must_use]
     pub fn tr_mul<R2: Dim, C2: Dim, SB>(&self, rhs: &Matrix<T, R2, C2, SB>) -> OMatrix<T, C1, C2>
     where
         SB: Storage<T, R2, C2>,
         DefaultAllocator: Allocator<T, C1, C2>,
         ShapeConstraint: SameNumberOfRows<R1, R2>,
     {
-        let mut res = Matrix::uninit(self.shape_generic().1, rhs.shape_generic().1);
-        self.xx_mul_to_uninit(Uninit, rhs, &mut res, |a, b| a.dot(b));
-        // SAFETY: this is OK because the result is now initialized.
-        unsafe { res.assume_init() }
+        let mut res = unsafe {
+            crate::unimplemented_or_uninitialized_generic!(self.data.shape().1, rhs.data.shape().1)
+        };
+
+        self.tr_mul_to(rhs, &mut res);
+        res
     }
 
     /// Equivalent to `self.adjoint() * rhs`.
     #[inline]
-    #[must_use]
     pub fn ad_mul<R2: Dim, C2: Dim, SB>(&self, rhs: &Matrix<T, R2, C2, SB>) -> OMatrix<T, C1, C2>
     where
         T: SimdComplexField,
@@ -690,26 +699,26 @@ where
         DefaultAllocator: Allocator<T, C1, C2>,
         ShapeConstraint: SameNumberOfRows<R1, R2>,
     {
-        let mut res = Matrix::uninit(self.shape_generic().1, rhs.shape_generic().1);
-        self.xx_mul_to_uninit(Uninit, rhs, &mut res, |a, b| a.dotc(b));
-        // SAFETY: this is OK because the result is now initialized.
-        unsafe { res.assume_init() }
+        let mut res = unsafe {
+            crate::unimplemented_or_uninitialized_generic!(self.data.shape().1, rhs.data.shape().1)
+        };
+
+        self.ad_mul_to(rhs, &mut res);
+        res
     }
 
     #[inline(always)]
-    fn xx_mul_to_uninit<Status, R2: Dim, C2: Dim, SB, R3: Dim, C3: Dim, SC>(
+    fn xx_mul_to<R2: Dim, C2: Dim, SB, R3: Dim, C3: Dim, SC>(
         &self,
-        _status: Status,
         rhs: &Matrix<T, R2, C2, SB>,
-        out: &mut Matrix<Status::Value, R3, C3, SC>,
+        out: &mut Matrix<T, R3, C3, SC>,
         dot: impl Fn(
-            &VectorSlice<'_, T, R1, SA::RStride, SA::CStride>,
-            &VectorSlice<'_, T, R2, SB::RStride, SB::CStride>,
+            &VectorSlice<T, R1, SA::RStride, SA::CStride>,
+            &VectorSlice<T, R2, SB::RStride, SB::CStride>,
         ) -> T,
     ) where
-        Status: InitStatus<T>,
-        SB: RawStorage<T, R2, C2>,
-        SC: RawStorageMut<Status::Value, R3, C3>,
+        SB: Storage<T, R2, C2>,
+        SC: StorageMut<T, R3, C3>,
         ShapeConstraint: SameNumberOfRows<R1, R2> + DimEq<C1, R3> + DimEq<C2, C3>,
     {
         let (nrows1, ncols1) = self.shape();
@@ -738,8 +747,7 @@ where
         for i in 0..ncols1 {
             for j in 0..ncols2 {
                 let dot = dot(&self.column(i), &rhs.column(j));
-                let elt = unsafe { out.get_unchecked_mut((i, j)) };
-                Status::init(elt, dot);
+                unsafe { *out.get_unchecked_mut((i, j)) = dot };
             }
         }
     }
@@ -756,7 +764,7 @@ where
         SC: StorageMut<T, R3, C3>,
         ShapeConstraint: SameNumberOfRows<R1, R2> + DimEq<C1, R3> + DimEq<C2, C3>,
     {
-        self.xx_mul_to_uninit(Init, rhs, out, |a, b| a.dot(b))
+        self.xx_mul_to(rhs, out, |a, b| a.dot(b))
     }
 
     /// Equivalent to `self.adjoint() * rhs` but stores the result into `out` to avoid
@@ -772,7 +780,7 @@ where
         SC: StorageMut<T, R3, C3>,
         ShapeConstraint: SameNumberOfRows<R1, R2> + DimEq<C1, R3> + DimEq<C2, C3>,
     {
-        self.xx_mul_to_uninit(Init, rhs, out, |a, b| a.dotc(b))
+        self.xx_mul_to(rhs, out, |a, b| a.dotc(b))
     }
 
     /// Equivalent to `self * rhs` but stores the result into `out` to avoid allocations.
@@ -793,7 +801,6 @@ where
 
     /// The kronecker product of two matrices (aka. tensor product of the corresponding linear
     /// maps).
-    #[must_use]
     pub fn kronecker<R2: Dim, C2: Dim, SB>(
         &self,
         rhs: &Matrix<T, R2, C2, SB>,
@@ -805,31 +812,34 @@ where
         SB: Storage<T, R2, C2>,
         DefaultAllocator: Allocator<T, DimProd<R1, R2>, DimProd<C1, C2>>,
     {
-        let (nrows1, ncols1) = self.shape_generic();
-        let (nrows2, ncols2) = rhs.shape_generic();
+        let (nrows1, ncols1) = self.data.shape();
+        let (nrows2, ncols2) = rhs.data.shape();
 
-        let mut res = Matrix::uninit(nrows1.mul(nrows2), ncols1.mul(ncols2));
-        let mut data_res = res.data.ptr_mut();
+        let mut res = unsafe {
+            crate::unimplemented_or_uninitialized_generic!(nrows1.mul(nrows2), ncols1.mul(ncols2))
+        };
 
-        unsafe {
+        {
+            let mut data_res = res.data.ptr_mut();
+
             for j1 in 0..ncols1.value() {
                 for j2 in 0..ncols2.value() {
                     for i1 in 0..nrows1.value() {
-                        let coeff = self.get_unchecked((i1, j1)).clone();
+                        unsafe {
+                            let coeff = self.get_unchecked((i1, j1)).inlined_clone();
 
-                        for i2 in 0..nrows2.value() {
-                            *data_res = MaybeUninit::new(
-                                coeff.clone() * rhs.get_unchecked((i2, j2)).clone(),
-                            );
-                            data_res = data_res.offset(1);
+                            for i2 in 0..nrows2.value() {
+                                *data_res = coeff.inlined_clone()
+                                    * rhs.get_unchecked((i2, j2)).inlined_clone();
+                                data_res = data_res.offset(1);
+                            }
                         }
                     }
                 }
             }
-
-            // SAFETY: the result matrix has been initialized by the loop above.
-            res.assume_init()
         }
+
+        res
     }
 }
 

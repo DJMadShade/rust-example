@@ -7,7 +7,7 @@ use std::slice;
 
 use crate::allocator::Allocator;
 use crate::sparse::cs_utils;
-use crate::{Const, DefaultAllocator, Dim, Dynamic, Matrix, OVector, Scalar, Vector, U1};
+use crate::{Const, DefaultAllocator, Dim, Dynamic, OVector, Scalar, Vector, U1};
 
 pub struct ColumnEntries<'a, T> {
     curr: usize,
@@ -31,9 +31,11 @@ impl<'a, T: Clone> Iterator for ColumnEntries<'a, T> {
         if self.curr >= self.i.len() {
             None
         } else {
-            let res = Some((unsafe { *self.i.get_unchecked(self.curr) }, unsafe {
-                self.v.get_unchecked(self.curr).clone()
-            }));
+            let res = Some(
+                (unsafe { self.i.get_unchecked(self.curr).clone() }, unsafe {
+                    self.v.get_unchecked(self.curr).clone()
+                }),
+            );
             self.curr += 1;
             res
         }
@@ -46,7 +48,7 @@ impl<'a, T: Clone> Iterator for ColumnEntries<'a, T> {
 pub trait CsStorageIter<'a, T, R, C = U1> {
     /// Iterator through all the rows of a specific columns.
     ///
-    /// The elements are given as a tuple (`row_index`, value).
+    /// The elements are given as a tuple (row_index, value).
     type ColumnEntries: Iterator<Item = (usize, T)>;
     /// Iterator through the row indices of a specific column.
     type ColumnRowIndices: Iterator<Item = usize>;
@@ -63,7 +65,7 @@ pub trait CsStorageIterMut<'a, T: 'a, R, C = U1> {
     type ValuesMut: Iterator<Item = &'a mut T>;
     /// Mutable iterator through all the rows of a specific columns.
     ///
-    /// The elements are given as a tuple (`row_index`, value).
+    /// The elements are given as a tuple (row_index, value).
     type ColumnEntriesMut: Iterator<Item = (usize, &'a mut T)>;
 
     /// A mutable iterator through the values buffer of the sparse matrix.
@@ -78,12 +80,10 @@ pub trait CsStorage<T, R, C = U1>: for<'a> CsStorageIter<'a, T, R, C> {
     fn shape(&self) -> (R, C);
     /// Retrieve the i-th row index of the underlying row index buffer.
     ///
-    /// # Safety
     /// No bound-checking is performed.
     unsafe fn row_index_unchecked(&self, i: usize) -> usize;
     /// The i-th value on the contiguous value buffer of this storage.
     ///
-    /// # Safety
     /// No bound-checking is performed.
     unsafe fn get_value_unchecked(&self, i: usize) -> &T;
     /// The i-th value on the contiguous value buffer of this storage.
@@ -119,19 +119,16 @@ where
     DefaultAllocator: Allocator<usize, C>,
 {
     /// The value buffer of this storage.
-    #[must_use]
     pub fn values(&self) -> &[T] {
         &self.vals
     }
 
     /// The column shifts buffer.
-    #[must_use]
     pub fn p(&self) -> &[usize] {
         self.p.as_slice()
     }
 
     /// The row index buffers.
-    #[must_use]
     pub fn i(&self) -> &[usize] {
         &self.i
     }
@@ -155,7 +152,7 @@ where
     #[inline]
     fn column_row_indices(&'a self, j: usize) -> Self::ColumnRowIndices {
         let rng = self.column_range(j);
-        self.i[rng].iter().cloned()
+        self.i[rng.clone()].iter().cloned()
     }
 }
 
@@ -359,32 +356,27 @@ impl<T: Scalar, R: Dim, C: Dim, S: CsStorage<T, R, C>> CsMatrix<T, R, C, S> {
     }
 
     /// The size of the data buffer.
-    #[must_use]
     pub fn len(&self) -> usize {
         self.data.len()
     }
 
     /// The number of rows of this matrix.
-    #[must_use]
     pub fn nrows(&self) -> usize {
         self.data.shape().0.value()
     }
 
     /// The number of rows of this matrix.
-    #[must_use]
     pub fn ncols(&self) -> usize {
         self.data.shape().1.value()
     }
 
     /// The shape of this matrix.
-    #[must_use]
     pub fn shape(&self) -> (usize, usize) {
         let (nrows, ncols) = self.data.shape();
         (nrows.value(), ncols.value())
     }
 
     /// Whether this matrix is square or not.
-    #[must_use]
     pub fn is_square(&self) -> bool {
         let (nrows, ncols) = self.data.shape();
         nrows.value() == ncols.value()
@@ -399,7 +391,6 @@ impl<T: Scalar, R: Dim, C: Dim, S: CsStorage<T, R, C>> CsMatrix<T, R, C, S> {
     /// If at any time this `is_sorted` method returns `false`, then, something went wrong
     /// and an issue should be open on the nalgebra repository with details on how to reproduce
     /// this.
-    #[must_use]
     pub fn is_sorted(&self) -> bool {
         for j in 0..self.ncols() {
             let mut curr = None;
@@ -418,7 +409,6 @@ impl<T: Scalar, R: Dim, C: Dim, S: CsStorage<T, R, C>> CsMatrix<T, R, C, S> {
     }
 
     /// Computes the transpose of this sparse matrix.
-    #[must_use = "This function does not mutate the matrix. Consider using the return value or removing the function call. There's also transpose_mut() for square matrices."]
     pub fn transpose(&self) -> CsMatrix<T, C, R>
     where
         DefaultAllocator: Allocator<usize, R>,
@@ -466,12 +456,12 @@ where
 {
     pub(crate) fn sort(&mut self)
     where
-        T: Zero,
         DefaultAllocator: Allocator<T, R>,
     {
         // Size = R
         let nrows = self.data.shape().0;
-        let mut workspace = Matrix::zeros_generic(nrows, Const::<1>);
+        let mut workspace =
+            unsafe { crate::unimplemented_or_uninitialized_generic!(nrows, Const::<1>) };
         self.sort_with_workspace(workspace.as_mut_slice());
     }
 
@@ -489,11 +479,11 @@ where
 
             // Sort the index vector.
             let range = self.data.column_range(j);
-            self.data.i[range.clone()].sort_unstable();
+            self.data.i[range.clone()].sort();
 
             // Permute the values too.
             for (i, irow) in range.clone().zip(self.data.i[range].iter().cloned()) {
-                self.data.vals[i] = workspace[irow].clone();
+                self.data.vals[i] = workspace[irow].inlined_clone();
             }
         }
     }
@@ -517,11 +507,11 @@ where
                     let curr_irow = self.data.i[idx];
 
                     if curr_irow == irow {
-                        value += self.data.vals[idx].clone();
+                        value += self.data.vals[idx].inlined_clone();
                     } else {
                         self.data.i[curr_i] = irow;
                         self.data.vals[curr_i] = value;
-                        value = self.data.vals[idx].clone();
+                        value = self.data.vals[idx].inlined_clone();
                         irow = curr_irow;
                         curr_i += 1;
                     }

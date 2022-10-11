@@ -1,14 +1,12 @@
 extern crate nyx_space as nyx;
 extern crate pretty_env_logger;
 
-use hifitime::TimeUnits;
+use hifitime::TimeUnitHelper;
 use nyx::cosmic::{Cosm, GuidanceMode, Orbit, Spacecraft};
-use nyx::dynamics::guidance::{GuidanceLaw, Ruggiero, Thruster};
+use nyx::dynamics::guidance::{Achieve, GuidanceLaw, Ruggiero, Thruster};
 use nyx::dynamics::{OrbitalDynamics, SpacecraftDynamics};
-use nyx::md::ui::Objective;
-use nyx::md::StateParameter;
 use nyx::propagators::*;
-use nyx::time::{Epoch, TimeSeries, Unit};
+use nyx::time::{Epoch, TimeSeries, TimeUnit};
 use nyx::State;
 use std::sync::mpsc::channel;
 
@@ -30,13 +28,13 @@ fn traj_ephem() {
     let setup = Propagator::default(OrbitalDynamics::two_body());
     let mut prop = setup.with(start_state);
     // The trajectory must always be generated on its own thread, no need to worry about it ;-)
-    let (end_state, ephem) = prop.for_duration_with_traj(31 * Unit::Day).unwrap();
+    let (end_state, ephem) = prop.for_duration_with_traj(31 * TimeUnit::Day).unwrap();
 
     // Example of iterating through the trajectory.
     // Note how we receive a fully blown Orbit, so we can manipulate it exactly like a normal state.
     let mut sum_sma = 0.0;
     let mut cnt = 0.0;
-    for state in ephem.every(1 * Unit::Day) {
+    for state in ephem.every(1 * TimeUnit::Day) {
         cnt += 1.0;
         sum_sma += state.sma()
     }
@@ -53,7 +51,7 @@ fn traj_ephem() {
     assert_eq!(ephem.last(), end_state, "Wrong final state");
     assert!(ephem.last().stm().is_err(), "STM is set!");
     assert!(
-        ephem.at(end_state.dt + 1 * Unit::Nanosecond).is_err(),
+        ephem.at(end_state.dt + 1 * TimeUnit::Nanosecond).is_err(),
         "Expected to be outside of interpolation window!"
     );
 
@@ -65,7 +63,7 @@ fn traj_ephem() {
     std::thread::spawn(move || {
         setup
             .with(start_state)
-            .for_duration_with_channel(31 * Unit::Day, tx)
+            .for_duration_with_channel(31 * TimeUnit::Day, tx)
             .unwrap();
     });
 
@@ -133,7 +131,7 @@ fn traj_ephem() {
     let mut max_pos_err = (eval_state.radius() - conv_state.radius()).norm();
     let mut max_vel_err = (eval_state.velocity() - conv_state.velocity()).norm();
 
-    for conv_state in ephem_back_to_earth.every(5 * Unit::Minute) {
+    for conv_state in ephem_back_to_earth.every(5 * TimeUnit::Minute) {
         let eval_state = ephem.at(conv_state.dt).unwrap();
 
         let pos_err = (eval_state.radius() - conv_state.radius()).norm();
@@ -188,30 +186,29 @@ fn traj_spacecraft() {
     let orbit = Orbit::keplerian(sma, 5e-5, 5e-3, 0.0, 178.0, 0.0, start_dt, eme2k);
 
     // Define the objectives and the control law
-    let objectives = &[Objective::within_tolerance(
-        StateParameter::AoP,
-        183.0,
-        5e-3,
-    )];
+    let objectives = vec![Achieve::Aop {
+        target: 183.0,
+        tol: 5e-3,
+    }];
 
-    let ruggiero_ctrl = Ruggiero::new(objectives, orbit).unwrap();
+    let ruggiero_ctrl = Ruggiero::new(objectives, orbit);
 
     // Build the spacecraft state
     let fuel_mass = 67.0;
     let dry_mass = 300.0;
     // Define the thruster
     let lowt = Thruster {
-        thrust_N: 89e-3,
-        isp_s: 1650.0,
+        thrust: 89e-3,
+        isp: 1650.0,
     };
     let start_state =
         Spacecraft::from_thruster(orbit, dry_mass, fuel_mass, lowt, GuidanceMode::Thrust);
 
     let sc_dynamics =
-        SpacecraftDynamics::from_guidance_law(OrbitalDynamics::two_body(), ruggiero_ctrl.clone());
+        SpacecraftDynamics::from_ctrl(OrbitalDynamics::two_body(), ruggiero_ctrl.clone());
 
     let setup = Propagator::default(sc_dynamics);
-    let prop_time = 44 * Unit::Minute + 10 * Unit::Second;
+    let prop_time = 44 * TimeUnit::Minute + 10 * TimeUnit::Second;
     let mut prop = setup.with(start_state);
     let (end_state, traj) = prop.for_duration_with_traj(prop_time).unwrap();
 
@@ -223,32 +220,30 @@ fn traj_spacecraft() {
     // Note: _Because_ we need to use the trajectory below, we'll be cloning the trajectory
     // If you don't need the trajectory after you've iterated over it, don't clone it (rustc will tell you that).
 
-    for mut sc_state in traj.every(1 * Unit::Day) {
+    for sc_state in traj.every(1 * TimeUnit::Day) {
         // We need to evaluate the mode of this state because the trajectory does not store discrete information
-        ruggiero_ctrl.next(&mut sc_state);
-        if sc_state.mode() != prev_mode {
+        let mode_then = ruggiero_ctrl.next(&sc_state);
+        if mode_then != prev_mode {
             println!(
                 "Mode changed from {:?} to {:?} @ {}",
                 prev_mode,
-                sc_state.mode(),
+                mode_then,
                 sc_state.epoch()
             );
-            prev_mode = sc_state.mode();
+            prev_mode = mode_then;
         }
     }
 
-    for epoch in TimeSeries::inclusive(start_dt, start_dt + prop_time, 1 * Unit::Day) {
+    for epoch in TimeSeries::inclusive(start_dt, start_dt + prop_time, 1 * TimeUnit::Day) {
         // Note: the `evaluate` function will return a Result which prevents a panic if you request something out of the ephemeris
-        let mut sc_state = traj.at(epoch).unwrap();
-        ruggiero_ctrl.next(&mut sc_state);
-        if sc_state.mode() != prev_mode {
+        let sc_state = traj.at(epoch).unwrap();
+        let mode_then = ruggiero_ctrl.next(&sc_state);
+        if mode_then != prev_mode {
             println!(
                 "Mode changed from {:?} to {:?} @ {}",
-                prev_mode,
-                sc_state.mode(),
-                epoch
+                prev_mode, mode_then, epoch
             );
-            prev_mode = sc_state.mode();
+            prev_mode = mode_then;
         }
     }
 
@@ -258,7 +253,8 @@ fn traj_spacecraft() {
     assert_eq!(traj.first(), start_state, "Wrong initial state");
     assert_eq!(traj.last(), end_state, "Wrong final state");
     assert!(
-        traj.at(end_state.epoch() + 1 * Unit::Nanosecond).is_err(),
+        traj.at(end_state.epoch() + 1 * TimeUnit::Nanosecond)
+            .is_err(),
         "Expected to be outside of interpolation window!"
     );
 
@@ -347,7 +343,7 @@ fn traj_spacecraft() {
     let mut max_pos_err = (eval_state.orbit.radius() - conv_state.orbit.radius()).norm();
     let mut max_vel_err = (eval_state.orbit.velocity() - conv_state.orbit.velocity()).norm();
 
-    for conv_state in ephem_back_to_earth.every(5 * Unit::Minute) {
+    for conv_state in ephem_back_to_earth.every(5 * TimeUnit::Minute) {
         let eval_state = traj.at(conv_state.epoch()).unwrap();
 
         let pos_err = (eval_state.orbit.radius() - conv_state.orbit.radius()).norm();
@@ -360,7 +356,7 @@ fn traj_spacecraft() {
         }
     }
     println!(
-        "[traj_spacecraft] Maximum interpolation error after double conversion: pos: {:.2e} m\t\tvel: {:.2e} m/s",
+        "[traj_ephem] Maximum interpolation error after double conversion: pos: {:.2e} m\t\tvel: {:.2e} m/s",
         max_pos_err * 1e3,
         max_vel_err * 1e3,
     );
@@ -378,9 +374,11 @@ fn traj_spacecraft() {
     );
 }
 
+#[ignore]
 #[allow(clippy::identity_op)]
 #[test]
 fn traj_ephem_backward() {
+    // BROKEN: cf. https://gitlab.com/chrisrabotin/nyx/-/issues/190
     // Test that we can correctly interpolate a spacecraft orbit
     let cosm = Cosm::de438();
     let eme2k = cosm.frame("EME2000");
@@ -392,16 +390,16 @@ fn traj_ephem_backward() {
 
     let setup = Propagator::default(OrbitalDynamics::two_body());
     let mut prop = setup.with(start_state);
-    let (end_state, ephem) = prop.for_duration_with_traj(-31 * Unit::Day).unwrap();
+    let (end_state, ephem) = prop.for_duration_with_traj(-31 * TimeUnit::Day).unwrap();
 
     // Example of iterating through the trajectory.
     // Note how we receive a fully blown Orbit, so we can manipulate it exactly like a normal state.
     let mut sum_sma = 0.0;
     let mut cnt = 0.0;
-    for epoch in TimeSeries::inclusive(start_dt - 31 * Unit::Day, start_dt, 1 * Unit::Day) {
+    for epoch in TimeSeries::inclusive(start_dt - 31 * TimeUnit::Day, start_dt, 1 * TimeUnit::Day) {
         cnt += 1.0;
         // Note: the `evaluate` function will return a Result which prevents a panic if you request something out of the ephemeris
-        // let state = ephem.at(epoch + 17 * Unit::Second).unwrap();
+        // let state = ephem.at(epoch + 17 * TimeUnit::Second).unwrap();
         // sum_sma += state.sma();
         match ephem.at(epoch) {
             Ok(state) => sum_sma += state.sma(),
@@ -413,22 +411,16 @@ fn traj_ephem_backward() {
     // === Below is the validation of the ephemeris == //
 
     assert_eq!(
-        ephem.first(),
-        start_state,
-        "Wrong initial state\nGot:  {}\nWant: {}",
-        ephem.first(),
-        start_state
+        ephem.segments.len(),
+        1010,
+        "Wrong number of expected segments"
     );
-    assert_eq!(
-        ephem.last(),
-        end_state,
-        "Wrong final state\nGot:  {}\nWant: {}",
-        ephem.last(),
-        end_state
-    );
-    assert!(ephem.last().stm().is_err(), "STM is set!");
+
+    assert_eq!(ephem.first(), start_state, "Wrong initial state");
+    assert_eq!(ephem.last(), end_state, "Wrong final state");
+    assert!(ephem.last().stm().unwrap().norm() > 0.0, "STM is not set!");
     assert!(
-        ephem.at(end_state.dt - 1 * Unit::Nanosecond).is_err(),
+        ephem.at(end_state.dt + 1 * TimeUnit::Nanosecond).is_err(),
         "Expected to be outside of interpolation window!"
     );
 
@@ -438,7 +430,7 @@ fn traj_ephem_backward() {
     std::thread::spawn(move || {
         setup
             .with(start_state)
-            .for_duration_with_channel(-31 * Unit::Day, tx)
+            .for_duration_with_channel(31 * TimeUnit::Day, tx)
             .unwrap();
     });
 
@@ -448,8 +440,6 @@ fn traj_ephem_backward() {
     let mut max_pos_err = (eval_state.radius() - start_state.radius()).norm();
     let mut max_vel_err = (eval_state.velocity() - start_state.velocity()).norm();
     let mut max_err = (eval_state.as_vector().unwrap() - start_state.as_vector().unwrap()).norm();
-
-    println!("{}", ephem);
 
     while let Ok(prop_state) = rx.recv() {
         let eval_state = ephem.at(prop_state.dt).unwrap();
@@ -469,7 +459,7 @@ fn traj_ephem_backward() {
     }
 
     println!(
-        "[traj_ephem_backward] Maximum interpolation error: pos: {:.2e} m\t\tvel: {:.2e} m/s\t\tfull state: {:.2e} (no unit)",
+        "[traj_ephem] Maximum interpolation error: pos: {:.2e} m\t\tvel: {:.2e} m/s\t\tfull state: {:.2e} (no unit)",
         max_pos_err * 1e3,
         max_vel_err * 1e3,
         max_err

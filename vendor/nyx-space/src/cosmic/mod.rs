@@ -1,6 +1,6 @@
 /*
     Nyx, blazing fast astrodynamics
-    Copyright (C) 2022 Christopher Rabotin <christopher.rabotin@gmail.com>
+    Copyright (C) 2021 Christopher Rabotin <christopher.rabotin@gmail.com>
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -26,8 +26,7 @@ pub use crate::cosmic::{Frame, GuidanceMode, Orbit, Spacecraft};
 pub use crate::errors::NyxError;
 use crate::linalg::allocator::Allocator;
 use crate::linalg::{DefaultAllocator, DimName, OMatrix, OVector};
-use crate::md::StateParameter;
-use crate::time::{Duration, Epoch, Unit, SECONDS_PER_DAY};
+use crate::time::{Duration, Epoch, TimeUnit, SECONDS_PER_DAY};
 use std::fmt;
 use std::fs::File;
 use std::io::Read;
@@ -104,17 +103,6 @@ where
     fn add(self, _other: OVector<f64, Self::Size>) -> Self {
         unimplemented!()
     }
-
-    /// Return the value of the parameter, returns an error by default
-    fn value(&self, _param: &StateParameter) -> Result<f64, NyxError> {
-        Err(NyxError::StateParameterUnavailable)
-    }
-
-    /// Allows setting the value of the given parameter.
-    /// NOTE: Most paramaters where the `value` is available CANNOT be also set for that parameter (it's a much harder problem!)
-    fn set_value(&mut self, _param: &StateParameter, _val: f64) -> Result<(), NyxError> {
-        Err(NyxError::StateParameterUnavailable)
-    }
 }
 
 impl XbEpoch {
@@ -124,13 +112,13 @@ impl XbEpoch {
     }
 
     pub fn to_epoch(&self) -> Epoch {
-        let epoch_delta = i64::from(self.days) * Unit::Day + self.seconds * Unit::Second;
+        let epoch_delta = self.days * TimeUnit::Day + self.seconds * TimeUnit::Second;
         match self.ts {
             0 => {
                 unimplemented!("TAI")
             }
             1 => match self.repr {
-                5 => Epoch::from_jde_et(epoch_delta.in_unit(Unit::Day)),
+                5 => Epoch::from_jde_et(epoch_delta.in_unit_f64(TimeUnit::Day)),
                 _ => unimplemented!("ET"),
             },
             2 => match self.repr {
@@ -142,7 +130,7 @@ impl XbEpoch {
             }
             4 => match self.repr {
                 2 => Epoch::from_tdb_seconds(epoch_delta.in_seconds()),
-                5 => Epoch::from_jde_tdb(epoch_delta.in_unit(Unit::Day)),
+                5 => Epoch::from_jde_tdb(epoch_delta.in_unit_f64(TimeUnit::Day)),
                 _ => unimplemented!("TDB"),
             },
             _ => unimplemented!(),

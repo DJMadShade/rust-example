@@ -4,9 +4,8 @@ use std::env;
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use lazy_static::lazy_static;
-
 use crate::term::{wants_emoji, Term};
+use lazy_static::lazy_static;
 
 #[cfg(feature = "ansi-parsing")]
 use crate::ansi::{strip_ansi_codes, AnsiCodeIterator};
@@ -185,9 +184,8 @@ impl Style {
     ///
     /// Effectively the string is split at each dot and then the
     /// terms in between are applied.  For instance `red.on_blue` will
-    /// create a string that is red on blue background. `9.on_12` is
-    /// the same, but using 256 color numbers. Unknown terms are
-    /// ignored.
+    /// create a string that is red on blue background.  Unknown terms
+    /// are ignored.
     pub fn from_dotted_str(s: &str) -> Style {
         let mut rv = Style::new();
         for part in s.split('.') {
@@ -216,19 +214,8 @@ impl Style {
                 "blink" => rv.blink(),
                 "reverse" => rv.reverse(),
                 "hidden" => rv.hidden(),
-                on_c if on_c.starts_with("on_") => {
-                    if let Ok(n) = on_c[3..].parse::<u8>() {
-                        rv.on_color256(n)
-                    } else {
-                        continue;
-                    }
-                }
-                c => {
-                    if let Ok(n) = c.parse::<u8>() {
-                        rv.color256(n)
-                    } else {
-                        continue;
-                    }
+                _ => {
+                    continue;
                 }
             };
         }
@@ -851,8 +838,6 @@ fn test_text_width() {
         measure_text_width(&s),
         if cfg!(feature = "ansi-parsing") {
             3
-        } else if cfg!(feature = "unicode-width") {
-            17
         } else {
             21
         }

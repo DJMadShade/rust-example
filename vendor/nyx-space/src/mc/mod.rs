@@ -1,6 +1,6 @@
 /*
     Nyx, blazing fast astrodynamics
-    Copyright (C) 2022 Christopher Rabotin <christopher.rabotin@gmail.com>
+    Copyright (C) 2021 Christopher Rabotin <christopher.rabotin@gmail.com>
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -21,20 +21,9 @@ extern crate rand_distr;
 extern crate rand_pcg;
 extern crate rayon;
 
-use rand::prelude::*;
-use rand_distr::{Distribution, Normal, Uniform};
+pub use rand::prelude::*;
+pub use rand_distr::{Distribution, Normal, Uniform};
 pub use rand_pcg::Pcg64Mcg;
+pub use rayon::prelude::*;
 
 pub mod helpers;
-mod montecarlo;
-
-pub use montecarlo::MonteCarlo;
-
-mod generator;
-pub use generator::{DispersedState, GaussianGenerator, Generator};
-
-mod multivariate;
-pub use multivariate::MultivariateNormal;
-
-mod results;
-pub use results::{Results, Stats};

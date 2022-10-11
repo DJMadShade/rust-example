@@ -1,2 +1,1 @@
-mod framework;
-mod manual_montecarlo;
+mod montecarlo;

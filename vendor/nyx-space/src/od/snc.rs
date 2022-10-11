@@ -1,6 +1,6 @@
 /*
     Nyx, blazing fast astrodynamics
-    Copyright (C) 2022 Christopher Rabotin <christopher.rabotin@gmail.com>
+    Copyright (C) 2021 Christopher Rabotin <christopher.rabotin@gmail.com>
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -189,16 +189,16 @@ where
 
 #[test]
 fn test_snc_init() {
-    use crate::time::Unit;
+    use crate::time::TimeUnit;
     let snc_expo = SNC3::with_decay(
-        2 * Unit::Minute,
+        2 * TimeUnit::Minute,
         &[1e-6, 1e-6, 1e-6],
         &[3600.0, 3600.0, 3600.0],
     );
     println!("{}", snc_expo);
 
     let snc_std = SNC3::with_start_time(
-        2 * Unit::Minute,
+        2 * TimeUnit::Minute,
         &[1e-6, 1e-6, 1e-6],
         Epoch::from_et_seconds(3600.0),
     );

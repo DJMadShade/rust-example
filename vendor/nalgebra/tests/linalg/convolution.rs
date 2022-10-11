@@ -26,20 +26,18 @@ fn convolve_same_check() {
     // Panic Tests
     // These really only apply to dynamic sized vectors
     assert!(panic::catch_unwind(|| {
-        let _ = DVector::from_vec(vec![1.0, 2.0])
+        DVector::from_vec(vec![1.0, 2.0])
             .convolve_same(DVector::from_vec(vec![1.0, 2.0, 3.0, 4.0]));
     })
     .is_err());
 
     assert!(panic::catch_unwind(|| {
-        let _ = DVector::<f32>::from_vec(vec![])
-            .convolve_same(DVector::from_vec(vec![1.0, 2.0, 3.0, 4.0]));
+        DVector::<f32>::from_vec(vec![]).convolve_same(DVector::from_vec(vec![1.0, 2.0, 3.0, 4.0]));
     })
     .is_err());
 
     assert!(panic::catch_unwind(|| {
-        let _ = DVector::from_vec(vec![1.0, 2.0, 3.0, 4.0])
-            .convolve_same(DVector::<f32>::from_vec(vec![]));
+        DVector::from_vec(vec![1.0, 2.0, 3.0, 4.0]).convolve_same(DVector::<f32>::from_vec(vec![]));
     })
     .is_err());
 }

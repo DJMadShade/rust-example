@@ -10,7 +10,6 @@ use crate::base::{DVectorSlice, DefaultAllocator, Matrix, OMatrix, SquareMatrix,
 impl<T: ComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
     /// Computes the solution of the linear system `self . x = b` where `x` is the unknown and only
     /// the lower-triangular part of `self` (including the diagonal) is considered not-zero.
-    #[must_use = "Did you mean to use solve_lower_triangular_mut()?"]
     #[inline]
     pub fn solve_lower_triangular<R2: Dim, C2: Dim, S2>(
         &self,
@@ -31,7 +30,6 @@ impl<T: ComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
 
     /// Computes the solution of the linear system `self . x = b` where `x` is the unknown and only
     /// the upper-triangular part of `self` (including the diagonal) is considered not-zero.
-    #[must_use = "Did you mean to use solve_upper_triangular_mut()?"]
     #[inline]
     pub fn solve_upper_triangular<R2: Dim, C2: Dim, S2>(
         &self,
@@ -82,14 +80,14 @@ impl<T: ComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
             let coeff;
 
             unsafe {
-                let diag = self.get_unchecked((i, i)).clone();
+                let diag = *self.get_unchecked((i, i));
 
                 if diag.is_zero() {
                     return false;
                 }
 
-                coeff = b.vget_unchecked(i).clone() / diag;
-                *b.vget_unchecked_mut(i) = coeff.clone();
+                coeff = *b.vget_unchecked(i) / diag;
+                *b.vget_unchecked_mut(i) = coeff;
             }
 
             b.rows_range_mut(i + 1..)
@@ -123,7 +121,7 @@ impl<T: ComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
             let mut bcol = b.column_mut(k);
 
             for i in 0..dim - 1 {
-                let coeff = unsafe { bcol.vget_unchecked(i).clone() } / diag.clone();
+                let coeff = unsafe { *bcol.vget_unchecked(i) } / diag;
                 bcol.rows_range_mut(i + 1..)
                     .axpy(-coeff, &self.slice_range(i + 1.., i), T::one());
             }
@@ -164,14 +162,14 @@ impl<T: ComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
             let coeff;
 
             unsafe {
-                let diag = self.get_unchecked((i, i)).clone();
+                let diag = *self.get_unchecked((i, i));
 
                 if diag.is_zero() {
                     return false;
                 }
 
-                coeff = b.vget_unchecked(i).clone() / diag;
-                *b.vget_unchecked_mut(i) = coeff.clone();
+                coeff = *b.vget_unchecked(i) / diag;
+                *b.vget_unchecked_mut(i) = coeff;
             }
 
             b.rows_range_mut(..i)
@@ -188,7 +186,6 @@ impl<T: ComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
      */
     /// Computes the solution of the linear system `self.transpose() . x = b` where `x` is the unknown and only
     /// the lower-triangular part of `self` (including the diagonal) is considered not-zero.
-    #[must_use = "Did you mean to use tr_solve_lower_triangular_mut()?"]
     #[inline]
     pub fn tr_solve_lower_triangular<R2: Dim, C2: Dim, S2>(
         &self,
@@ -209,7 +206,6 @@ impl<T: ComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
 
     /// Computes the solution of the linear system `self.transpose() . x = b` where `x` is the unknown and only
     /// the upper-triangular part of `self` (including the diagonal) is considered not-zero.
-    #[must_use = "Did you mean to use tr_solve_upper_triangular_mut()?"]
     #[inline]
     pub fn tr_solve_upper_triangular<R2: Dim, C2: Dim, S2>(
         &self,
@@ -280,7 +276,6 @@ impl<T: ComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
 
     /// Computes the solution of the linear system `self.adjoint() . x = b` where `x` is the unknown and only
     /// the lower-triangular part of `self` (including the diagonal) is considered not-zero.
-    #[must_use = "Did you mean to use ad_solve_lower_triangular_mut()?"]
     #[inline]
     pub fn ad_solve_lower_triangular<R2: Dim, C2: Dim, S2>(
         &self,
@@ -301,7 +296,6 @@ impl<T: ComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
 
     /// Computes the solution of the linear system `self.adjoint() . x = b` where `x` is the unknown and only
     /// the upper-triangular part of `self` (including the diagonal) is considered not-zero.
-    #[must_use = "Did you mean to use ad_solve_upper_triangular_mut()?"]
     #[inline]
     pub fn ad_solve_upper_triangular<R2: Dim, C2: Dim, S2>(
         &self,
@@ -376,8 +370,8 @@ impl<T: ComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
         b: &mut Vector<T, R2, S2>,
         conjugate: impl Fn(T) -> T,
         dot: impl Fn(
-            &DVectorSlice<'_, T, S::RStride, S::CStride>,
-            &DVectorSlice<'_, T, S2::RStride, S2::CStride>,
+            &DVectorSlice<T, S::RStride, S::CStride>,
+            &DVectorSlice<T, S2::RStride, S2::CStride>,
         ) -> T,
     ) -> bool
     where
@@ -392,13 +386,13 @@ impl<T: ComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
             unsafe {
                 let b_i = b.vget_unchecked_mut(i);
 
-                let diag = conjugate(self.get_unchecked((i, i)).clone());
+                let diag = conjugate(*self.get_unchecked((i, i)));
 
                 if diag.is_zero() {
                     return false;
                 }
 
-                *b_i = (b_i.clone() - dot) / diag;
+                *b_i = (*b_i - dot) / diag;
             }
         }
 
@@ -411,8 +405,8 @@ impl<T: ComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
         b: &mut Vector<T, R2, S2>,
         conjugate: impl Fn(T) -> T,
         dot: impl Fn(
-            &DVectorSlice<'_, T, S::RStride, S::CStride>,
-            &DVectorSlice<'_, T, S2::RStride, S2::CStride>,
+            &DVectorSlice<T, S::RStride, S::CStride>,
+            &DVectorSlice<T, S2::RStride, S2::CStride>,
         ) -> T,
     ) -> bool
     where
@@ -426,13 +420,13 @@ impl<T: ComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
 
             unsafe {
                 let b_i = b.vget_unchecked_mut(i);
-                let diag = conjugate(self.get_unchecked((i, i)).clone());
+                let diag = conjugate(*self.get_unchecked((i, i)));
 
                 if diag.is_zero() {
                     return false;
                 }
 
-                *b_i = (b_i.clone() - dot) / diag;
+                *b_i = (*b_i - dot) / diag;
             }
         }
 
@@ -449,7 +443,6 @@ impl<T: ComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
 impl<T: SimdComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
     /// Computes the solution of the linear system `self . x = b` where `x` is the unknown and only
     /// the lower-triangular part of `self` (including the diagonal) is considered not-zero.
-    #[must_use = "Did you mean to use solve_lower_triangular_unchecked_mut()?"]
     #[inline]
     pub fn solve_lower_triangular_unchecked<R2: Dim, C2: Dim, S2>(
         &self,
@@ -467,7 +460,6 @@ impl<T: SimdComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
 
     /// Computes the solution of the linear system `self . x = b` where `x` is the unknown and only
     /// the upper-triangular part of `self` (including the diagonal) is considered not-zero.
-    #[must_use = "Did you mean to use solve_upper_triangular_unchecked_mut()?"]
     #[inline]
     pub fn solve_upper_triangular_unchecked<R2: Dim, C2: Dim, S2>(
         &self,
@@ -508,13 +500,13 @@ impl<T: SimdComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
             let coeff;
 
             unsafe {
-                let diag = self.get_unchecked((i, i)).clone();
-                coeff = b.vget_unchecked(i).clone() / diag;
-                *b.vget_unchecked_mut(i) = coeff.clone();
+                let diag = *self.get_unchecked((i, i));
+                coeff = *b.vget_unchecked(i) / diag;
+                *b.vget_unchecked_mut(i) = coeff;
             }
 
             b.rows_range_mut(i + 1..)
-                .axpy(-coeff.clone(), &self.slice_range(i + 1.., i), T::one());
+                .axpy(-coeff, &self.slice_range(i + 1.., i), T::one());
         }
     }
 
@@ -537,7 +529,7 @@ impl<T: SimdComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
             let mut bcol = b.column_mut(k);
 
             for i in 0..dim - 1 {
-                let coeff = unsafe { bcol.vget_unchecked(i).clone() } / diag.clone();
+                let coeff = unsafe { *bcol.vget_unchecked(i) } / diag;
                 bcol.rows_range_mut(i + 1..)
                     .axpy(-coeff, &self.slice_range(i + 1.., i), T::one());
             }
@@ -569,9 +561,9 @@ impl<T: SimdComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
             let coeff;
 
             unsafe {
-                let diag = self.get_unchecked((i, i)).clone();
-                coeff = b.vget_unchecked(i).clone() / diag;
-                *b.vget_unchecked_mut(i) = coeff.clone();
+                let diag = *self.get_unchecked((i, i));
+                coeff = *b.vget_unchecked(i) / diag;
+                *b.vget_unchecked_mut(i) = coeff;
             }
 
             b.rows_range_mut(..i)
@@ -586,7 +578,6 @@ impl<T: SimdComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
      */
     /// Computes the solution of the linear system `self.transpose() . x = b` where `x` is the unknown and only
     /// the lower-triangular part of `self` (including the diagonal) is considered not-zero.
-    #[must_use = "Did you mean to use tr_solve_lower_triangular_unchecked_mut()?"]
     #[inline]
     pub fn tr_solve_lower_triangular_unchecked<R2: Dim, C2: Dim, S2>(
         &self,
@@ -604,7 +595,6 @@ impl<T: SimdComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
 
     /// Computes the solution of the linear system `self.transpose() . x = b` where `x` is the unknown and only
     /// the upper-triangular part of `self` (including the diagonal) is considered not-zero.
-    #[must_use = "Did you mean to use tr_solve_upper_triangular_unchecked_mut()?"]
     #[inline]
     pub fn tr_solve_upper_triangular_unchecked<R2: Dim, C2: Dim, S2>(
         &self,
@@ -658,7 +648,6 @@ impl<T: SimdComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
 
     /// Computes the solution of the linear system `self.adjoint() . x = b` where `x` is the unknown and only
     /// the lower-triangular part of `self` (including the diagonal) is considered not-zero.
-    #[must_use = "Did you mean to use ad_solve_lower_triangular_unchecked_mut()?"]
     #[inline]
     pub fn ad_solve_lower_triangular_unchecked<R2: Dim, C2: Dim, S2>(
         &self,
@@ -676,7 +665,6 @@ impl<T: SimdComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
 
     /// Computes the solution of the linear system `self.adjoint() . x = b` where `x` is the unknown and only
     /// the upper-triangular part of `self` (including the diagonal) is considered not-zero.
-    #[must_use = "Did you mean to use ad_solve_upper_triangular_unchecked_mut()?"]
     #[inline]
     pub fn ad_solve_upper_triangular_unchecked<R2: Dim, C2: Dim, S2>(
         &self,
@@ -734,8 +722,8 @@ impl<T: SimdComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
         b: &mut Vector<T, R2, S2>,
         conjugate: impl Fn(T) -> T,
         dot: impl Fn(
-            &DVectorSlice<'_, T, S::RStride, S::CStride>,
-            &DVectorSlice<'_, T, S2::RStride, S2::CStride>,
+            &DVectorSlice<T, S::RStride, S::CStride>,
+            &DVectorSlice<T, S2::RStride, S2::CStride>,
         ) -> T,
     ) where
         S2: StorageMut<T, R2, U1>,
@@ -748,8 +736,8 @@ impl<T: SimdComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
 
             unsafe {
                 let b_i = b.vget_unchecked_mut(i);
-                let diag = conjugate(self.get_unchecked((i, i)).clone());
-                *b_i = (b_i.clone() - dot) / diag;
+                let diag = conjugate(*self.get_unchecked((i, i)));
+                *b_i = (*b_i - dot) / diag;
             }
         }
     }
@@ -760,8 +748,8 @@ impl<T: SimdComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
         b: &mut Vector<T, R2, S2>,
         conjugate: impl Fn(T) -> T,
         dot: impl Fn(
-            &DVectorSlice<'_, T, S::RStride, S::CStride>,
-            &DVectorSlice<'_, T, S2::RStride, S2::CStride>,
+            &DVectorSlice<T, S::RStride, S::CStride>,
+            &DVectorSlice<T, S2::RStride, S2::CStride>,
         ) -> T,
     ) where
         S2: StorageMut<T, R2, U1>,
@@ -772,8 +760,8 @@ impl<T: SimdComplexField, D: Dim, S: Storage<T, D, D>> SquareMatrix<T, D, S> {
 
             unsafe {
                 let b_i = b.vget_unchecked_mut(i);
-                let diag = conjugate(self.get_unchecked((i, i)).clone());
-                *b_i = (b_i.clone() - dot) / diag;
+                let diag = conjugate(*self.get_unchecked((i, i)));
+                *b_i = (*b_i - dot) / diag;
             }
         }
     }

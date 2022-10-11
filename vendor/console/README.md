@@ -1,12 +1,6 @@
-# `console`
+# console
 
-[![Build Status](https://github.com/console-rs/console/workflows/CI/badge.svg?branch=master)](https://github.com/console-rs/console/actions?query=workflow%3ACI)
-[![Crates.io](https://img.shields.io/crates/d/console.svg)](https://crates.io/crates/console)
-[![License](https://img.shields.io/github/license/console-rs/console)](https://github.com/console-rs/console/blob/master/LICENSE)
-[![rustc 1.40.0](https://img.shields.io/badge/rust-1.40%2B-orange.svg)](https://img.shields.io/badge/rust-1.40%2B-orange.svg)
-[![Documentation](https://docs.rs/console/badge.svg)](https://docs.rs/console)
-
-**console** is a library for Rust that provides access to various terminal
+console is a library for Rust that provides access to various terminal
 features so you can build nicer looking command line interfaces.  It
 comes with various tools and utilities for working with Terminals and
 formatting text.
@@ -62,7 +56,7 @@ println!("This is {} neat", cyan.apply_to("quite"));
 
 ## Working with ANSI Codes
 
-The crate provides the function `strip_ansi_codes` to remove ANSI codes
+The crate provids the function `strip_ansi_codes` to remove ANSI codes
 from a string as well as `measure_text_width` to calculate the width of a
 string as it would be displayed by the terminal.  Both of those together
 are useful for more complex formatting.

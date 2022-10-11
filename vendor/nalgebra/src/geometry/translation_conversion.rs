@@ -212,14 +212,16 @@ impl<T: Scalar, const D: usize> From<[T; D]> for Translation<T, D> {
 impl<T: Scalar, const D: usize> From<Point<T, D>> for Translation<T, D> {
     #[inline]
     fn from(pt: Point<T, D>) -> Self {
-        Translation { vector: pt.coords }
+        Translation {
+            vector: pt.coords.into(),
+        }
     }
 }
 
-impl<T: Scalar, const D: usize> From<Translation<T, D>> for [T; D] {
+impl<T: Scalar, const D: usize> Into<[T; D]> for Translation<T, D> {
     #[inline]
-    fn from(t: Translation<T, D>) -> Self {
-        t.vector.into()
+    fn into(self) -> [T; D] {
+        self.vector.into()
     }
 }
 

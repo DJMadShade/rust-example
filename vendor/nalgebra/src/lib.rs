@@ -13,7 +13,7 @@ and the official package manager: [cargo](https://github.com/rust-lang/cargo).
 
 Simply add the following to your `Cargo.toml` file:
 
-```ignore
+```.ignore
 [dependencies]
 // TODO: replace the * by the latest version.
 nalgebra = "*"
@@ -25,7 +25,7 @@ Most useful functionalities of **nalgebra** are grouped in the root module `nalg
 However, the recommended way to use **nalgebra** is to import types and traits
 explicitly, and call free-functions using the `na::` prefix:
 
-```
+```.rust
 #[macro_use]
 extern crate approx; // For the macro relative_eq!
 extern crate nalgebra as na;
@@ -46,56 +46,48 @@ fn main() {
 **nalgebra** is meant to be a general-purpose, low-dimensional, linear algebra library, with
 an optimized set of tools for computer graphics and physics. Those features include:
 
-* A single parametrizable type [`Matrix`](Matrix) for vectors, (square or rectangular) matrices, and
-  slices with dimensions known either at compile-time (using type-level integers) or at runtime.
+* A single parametrizable type `Matrix` for vectors, (square or rectangular) matrices, and slices
+  with dimensions known either at compile-time (using type-level integers) or at runtime.
 * Matrices and vectors with compile-time sizes are statically allocated while dynamic ones are
   allocated on the heap.
-* Convenient aliases for low-dimensional matrices and vectors: [`Vector1`](Vector1) to
-  [`Vector6`](Vector6) and [`Matrix1x1`](Matrix1) to [`Matrix6x6`](Matrix6), including rectangular
-  matrices like [`Matrix2x5`](Matrix2x5).
-* Points sizes known at compile time, and convenience aliases: [`Point1`](Point1) to
-  [`Point6`](Point6).
-* Translation (seen as a transformation that composes by multiplication):
-  [`Translation2`](Translation2), [`Translation3`](Translation3).
-* Rotation matrices: [`Rotation2`](Rotation2), [`Rotation3`](Rotation3).
-* Quaternions: [`Quaternion`](Quaternion), [`UnitQuaternion`](UnitQuaternion) (for 3D rotation).
-* Unit complex numbers can be used for 2D rotation: [`UnitComplex`](UnitComplex).
-* Algebraic entities with a norm equal to one: [`Unit<T>`](Unit), e.g., `Unit<Vector3<f32>>`.
-* Isometries (translation ⨯ rotation): [`Isometry2`](Isometry2), [`Isometry3`](Isometry3)
-* Similarity transformations (translation ⨯ rotation ⨯ uniform scale):
-  [`Similarity2`](Similarity2), [`Similarity3`](Similarity3).
-* Affine transformations stored as a homogeneous matrix:
-  [`Affine2`](Affine2), [`Affine3`](Affine3).
-* Projective (i.e. invertible) transformations stored as a homogeneous matrix:
-  [`Projective2`](Projective2), [`Projective3`](Projective3).
+* Convenient aliases for low-dimensional matrices and vectors: `Vector1` to `Vector6` and
+  `Matrix1x1` to `Matrix6x6`, including rectangular matrices like `Matrix2x5`.
+* Points sizes known at compile time, and convenience aliases: `Point1` to `Point6`.
+* Translation (seen as a transformation that composes by multiplication): `Translation2`,
+  `Translation3`.
+* Rotation matrices: `Rotation2`, `Rotation3`.
+* Quaternions: `Quaternion`, `UnitQuaternion` (for 3D rotation).
+* Unit complex numbers can be used for 2D rotation: `UnitComplex`.
+* Algebraic entities with a norm equal to one: `Unit<T>`, e.g., `Unit<Vector3<f32>>`.
+* Isometries (translation ⨯ rotation): `Isometry2`, `Isometry3`
+* Similarity transformations (translation ⨯ rotation ⨯ uniform scale): `Similarity2`, `Similarity3`.
+* Affine transformations stored as a homogeneous matrix: `Affine2`, `Affine3`.
+* Projective (i.e. invertible) transformations stored as a homogeneous matrix: `Projective2`,
+  `Projective3`.
 * General transformations that does not have to be invertible, stored as a homogeneous matrix:
-  [`Transform2`](Transform2), [`Transform3`](Transform3).
-* 3D projections for computer graphics: [`Perspective3`](Perspective3),
-  [`Orthographic3`](Orthographic3).
-* Matrix factorizations: [`Cholesky`](Cholesky), [`QR`](QR), [`LU`](LU), [`FullPivLU`](FullPivLU),
-  [`SVD`](SVD), [`Schur`](Schur), [`Hessenberg`](Hessenberg), [`SymmetricEigen`](SymmetricEigen).
+  `Transform2`, `Transform3`.
+* 3D projections for computer graphics: `Perspective3`, `Orthographic3`.
+* Matrix factorizations: `Cholesky`, `QR`, `LU`, `FullPivLU`, `SVD`, `Schur`, `Hessenberg`, `SymmetricEigen`.
 * Insertion and removal of rows of columns of a matrix.
 */
 
-#![deny(
-    missing_docs,
-    nonstandard_style,
-    unused_variables,
-    unused_mut,
-    unused_parens,
-    unused_qualifications,
-    rust_2018_idioms,
-    rust_2018_compatibility,
-    future_incompatible,
-    missing_copy_implementations
-)]
-#![cfg_attr(feature = "rkyv-serialize-no-std", warn(unused_results))] // TODO: deny this once bytecheck stops generating warnings.
-#![cfg_attr(not(feature = "rkyv-serialize-no-std"), deny(unused_results))]
+// #![feature(plugin)]
+//
+// #![plugin(clippy)]
+
+#![deny(non_camel_case_types)]
+#![deny(unused_parens)]
+#![deny(non_upper_case_globals)]
+#![deny(unused_qualifications)]
+#![deny(unused_results)]
+#![deny(missing_docs)]
 #![doc(
     html_favicon_url = "https://nalgebra.org/img/favicon.ico",
     html_root_url = "https://docs.rs/nalgebra/0.25.0"
 )]
 #![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(all(feature = "alloc", not(feature = "std")), feature(alloc))]
+#![cfg_attr(feature = "no_unsound_assume_init", allow(unreachable_code))]
 
 #[cfg(feature = "rand-no-std")]
 extern crate rand_package as rand;
@@ -109,12 +101,13 @@ extern crate approx;
 extern crate num_traits as num;
 
 #[cfg(all(feature = "alloc", not(feature = "std")))]
-#[cfg_attr(test, macro_use)]
 extern crate alloc;
 
 #[cfg(not(feature = "std"))]
 extern crate core as std;
 
+#[cfg(feature = "io")]
+extern crate pest;
 #[macro_use]
 #[cfg(feature = "io")]
 extern crate pest_derive;
@@ -191,7 +184,6 @@ pub fn zero<T: Zero>() -> T {
 /// Wraps `val` into the range `[min, max]` using modular arithmetics.
 ///
 /// The range must not be empty.
-#[must_use]
 #[inline]
 pub fn wrap<T>(mut val: T, min: T, max: T) -> T
 where
@@ -206,15 +198,19 @@ where
         while val < min {
             val += width
         }
+
+        val
     } else if val > max {
         val -= width;
 
         while val > max {
             val -= width
         }
-    }
 
-    val
+        val
+    } else {
+        val
+    }
 }
 
 /// Returns a reference to the input value clamped to the interval `[min, max]`.
@@ -223,7 +219,6 @@ where
 ///     * If `min < val < max`, this returns `val`.
 ///     * If `val <= min`, this returns `min`.
 ///     * If `val >= max`, this returns `max`.
-#[must_use]
 #[inline]
 pub fn clamp<T: PartialOrd>(val: T, min: T, max: T) -> T {
     if val > min {
@@ -251,8 +246,8 @@ pub fn min<T: Ord>(a: T, b: T) -> T {
 
 /// The absolute value of `a`.
 ///
-/// Deprecated: Use [`Matrix::abs`] or [`ComplexField::abs`] instead.
-#[deprecated(note = "use the inherent method `Matrix::abs` or `ComplexField::abs` instead")]
+/// Deprecated: Use [Matrix::abs] or [RealField::abs] instead.
+#[deprecated(note = "use the inherent method `Matrix::abs` or `RealField::abs` instead")]
 #[inline]
 pub fn abs<T: Signed>(a: &T) -> T {
     a.abs()
@@ -390,7 +385,7 @@ pub fn partial_sort2<'a, T: PartialOrd>(a: &'a T, b: &'a T) -> Option<(&'a T, &'
 /// # See also:
 ///
 /// * [distance](fn.distance.html)
-/// * [`distance_squared`](fn.distance_squared.html)
+/// * [distance_squared](fn.distance_squared.html)
 #[inline]
 pub fn center<T: SimdComplexField, const D: usize>(
     p1: &Point<T, D>,
@@ -404,7 +399,7 @@ pub fn center<T: SimdComplexField, const D: usize>(
 /// # See also:
 ///
 /// * [center](fn.center.html)
-/// * [`distance_squared`](fn.distance_squared.html)
+/// * [distance_squared](fn.distance_squared.html)
 #[inline]
 pub fn distance<T: SimdComplexField, const D: usize>(
     p1: &Point<T, D>,
@@ -436,11 +431,11 @@ pub fn distance_squared<T: SimdComplexField, const D: usize>(
 ///
 /// # See also:
 ///
-/// * [`convert_ref`](fn.convert_ref.html)
-/// * [`convert_ref_unchecked`](fn.convert_ref_unchecked.html)
-/// * [`is_convertible`](../nalgebra/fn.is_convertible.html)
-/// * [`try_convert`](fn.try_convert.html)
-/// * [`try_convert_ref`](fn.try_convert_ref.html)
+/// * [convert_ref](fn.convert_ref.html)
+/// * [convert_ref_unchecked](fn.convert_ref_unchecked.html)
+/// * [is_convertible](../nalgebra/fn.is_convertible.html)
+/// * [try_convert](fn.try_convert.html)
+/// * [try_convert_ref](fn.try_convert_ref.html)
 #[inline]
 pub fn convert<From, To: SupersetOf<From>>(t: From) -> To {
     To::from_subset(&t)
@@ -453,10 +448,10 @@ pub fn convert<From, To: SupersetOf<From>>(t: From) -> To {
 /// # See also:
 ///
 /// * [convert](fn.convert.html)
-/// * [`convert_ref`](fn.convert_ref.html)
-/// * [`convert_ref_unchecked`](fn.convert_ref_unchecked.html)
-/// * [`is_convertible`](../nalgebra/fn.is_convertible.html)
-/// * [`try_convert_ref`](fn.try_convert_ref.html)
+/// * [convert_ref](fn.convert_ref.html)
+/// * [convert_ref_unchecked](fn.convert_ref_unchecked.html)
+/// * [is_convertible](../nalgebra/fn.is_convertible.html)
+/// * [try_convert_ref](fn.try_convert_ref.html)
 #[inline]
 pub fn try_convert<From: SupersetOf<To>, To>(t: From) -> Option<To> {
     t.to_subset()
@@ -468,10 +463,10 @@ pub fn try_convert<From: SupersetOf<To>, To>(t: From) -> Option<To> {
 /// # See also:
 ///
 /// * [convert](fn.convert.html)
-/// * [`convert_ref`](fn.convert_ref.html)
-/// * [`convert_ref_unchecked`](fn.convert_ref_unchecked.html)
-/// * [`try_convert`](fn.try_convert.html)
-/// * [`try_convert_ref`](fn.try_convert_ref.html)
+/// * [convert_ref](fn.convert_ref.html)
+/// * [convert_ref_unchecked](fn.convert_ref_unchecked.html)
+/// * [try_convert](fn.try_convert.html)
+/// * [try_convert_ref](fn.try_convert_ref.html)
 #[inline]
 pub fn is_convertible<From: SupersetOf<To>, To>(t: &From) -> bool {
     t.is_in_subset()
@@ -483,11 +478,11 @@ pub fn is_convertible<From: SupersetOf<To>, To>(t: &From) -> bool {
 /// # See also:
 ///
 /// * [convert](fn.convert.html)
-/// * [`convert_ref`](fn.convert_ref.html)
-/// * [`convert_ref_unchecked`](fn.convert_ref_unchecked.html)
-/// * [`is_convertible`](../nalgebra/fn.is_convertible.html)
-/// * [`try_convert`](fn.try_convert.html)
-/// * [`try_convert_ref`](fn.try_convert_ref.html)
+/// * [convert_ref](fn.convert_ref.html)
+/// * [convert_ref_unchecked](fn.convert_ref_unchecked.html)
+/// * [is_convertible](../nalgebra/fn.is_convertible.html)
+/// * [try_convert](fn.try_convert.html)
+/// * [try_convert_ref](fn.try_convert_ref.html)
 #[inline]
 pub fn convert_unchecked<From: SupersetOf<To>, To>(t: From) -> To {
     t.to_subset_unchecked()
@@ -498,10 +493,10 @@ pub fn convert_unchecked<From: SupersetOf<To>, To>(t: From) -> To {
 /// # See also:
 ///
 /// * [convert](fn.convert.html)
-/// * [`convert_ref_unchecked`](fn.convert_ref_unchecked.html)
-/// * [`is_convertible`](../nalgebra/fn.is_convertible.html)
-/// * [`try_convert`](fn.try_convert.html)
-/// * [`try_convert_ref`](fn.try_convert_ref.html)
+/// * [convert_ref_unchecked](fn.convert_ref_unchecked.html)
+/// * [is_convertible](../nalgebra/fn.is_convertible.html)
+/// * [try_convert](fn.try_convert.html)
+/// * [try_convert_ref](fn.try_convert_ref.html)
 #[inline]
 pub fn convert_ref<From, To: SupersetOf<From>>(t: &From) -> To {
     To::from_subset(t)
@@ -512,10 +507,10 @@ pub fn convert_ref<From, To: SupersetOf<From>>(t: &From) -> To {
 /// # See also:
 ///
 /// * [convert](fn.convert.html)
-/// * [`convert_ref`](fn.convert_ref.html)
-/// * [`convert_ref_unchecked`](fn.convert_ref_unchecked.html)
-/// * [`is_convertible`](../nalgebra/fn.is_convertible.html)
-/// * [`try_convert`](fn.try_convert.html)
+/// * [convert_ref](fn.convert_ref.html)
+/// * [convert_ref_unchecked](fn.convert_ref_unchecked.html)
+/// * [is_convertible](../nalgebra/fn.is_convertible.html)
+/// * [try_convert](fn.try_convert.html)
 #[inline]
 pub fn try_convert_ref<From: SupersetOf<To>, To>(t: &From) -> Option<To> {
     t.to_subset()
@@ -527,10 +522,10 @@ pub fn try_convert_ref<From: SupersetOf<To>, To>(t: &From) -> Option<To> {
 /// # See also:
 ///
 /// * [convert](fn.convert.html)
-/// * [`convert_ref`](fn.convert_ref.html)
-/// * [`is_convertible`](../nalgebra/fn.is_convertible.html)
-/// * [`try_convert`](fn.try_convert.html)
-/// * [`try_convert_ref`](fn.try_convert_ref.html)
+/// * [convert_ref](fn.convert_ref.html)
+/// * [is_convertible](../nalgebra/fn.is_convertible.html)
+/// * [try_convert](fn.try_convert.html)
+/// * [try_convert_ref](fn.try_convert_ref.html)
 #[inline]
 pub fn convert_ref_unchecked<From: SupersetOf<To>, To>(t: &From) -> To {
     t.to_subset_unchecked()

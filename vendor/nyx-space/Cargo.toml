@@ -12,11 +12,11 @@
 [package]
 edition = "2021"
 name = "nyx-space"
-version = "1.1.0"
+version = "1.0.0"
 authors = ["Christopher Rabotin <christopher.rabotin@gmail.com>"]
 exclude = ["tests/GMAT_scripts/*", "examples", "data/*.gz", "data/*.png", "data/od_plots/", "rustfmt.toml", "de438s.xb", "Pipfile*", ".vscode/launch.json", "*.kst", "docs/*", "*.bsp", "data/tests/*"]
 description = "A high-fidelity space mission toolkit, with orbit propagation, estimation and some systems engineering"
-homepage = "https://nyxspace.com"
+homepage = "https://nyx-space.com"
 documentation = "https://docs.rs/nyx-space/"
 readme = "README.md"
 keywords = ["space", "mission", "design", "orbit", "estimation"]
@@ -54,20 +54,13 @@ default-features = false
 version = "0.3"
 
 [dependencies.hifitime]
-version = "3.0.0"
+version = "2.3.1"
 
 [dependencies.hyperdual]
-version = "1.0.0"
-
-[dependencies.indicatif]
-version = "0.16"
-features = ["rayon"]
+version = "0.4.2"
 
 [dependencies.lazy_static]
 version = "1.4.0"
-
-[dependencies.levenberg-marquardt]
-version = "0.12"
 
 [dependencies.log]
 version = "0.4"
@@ -76,7 +69,7 @@ version = "0.4"
 version = "0.2"
 
 [dependencies.nalgebra]
-version = "0.30.1"
+version = "0.27"
 
 [dependencies.num]
 version = "0.3"
@@ -106,19 +99,13 @@ version = "1.5"
 [dependencies.regex]
 version = "1.5"
 
-[dependencies.rstats]
-version = "1.0.12"
-
 [dependencies.rust-embed]
-version = "6"
+version = "5.9"
 
 [dependencies.serde]
 version = "1.0"
 
 [dependencies.serde_derive]
-version = "1.0"
-
-[dependencies.thiserror]
 version = "1.0"
 
 [dependencies.toml]

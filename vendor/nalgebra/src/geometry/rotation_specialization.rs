@@ -17,9 +17,7 @@ use std::ops::Neg;
 
 use crate::base::dimension::{U1, U2, U3};
 use crate::base::storage::Storage;
-use crate::base::{
-    Matrix2, Matrix3, SMatrix, SVector, Unit, UnitVector3, Vector, Vector1, Vector2, Vector3,
-};
+use crate::base::{Matrix2, Matrix3, SMatrix, SVector, Unit, Vector, Vector1, Vector2, Vector3};
 
 use crate::geometry::{Rotation2, Rotation3, UnitComplex, UnitQuaternion};
 
@@ -44,7 +42,7 @@ impl<T: SimdRealField> Rotation2<T> {
     /// ```
     pub fn new(angle: T) -> Self {
         let (sia, coa) = angle.simd_sin_cos();
-        Self::from_matrix_unchecked(Matrix2::new(coa.clone(), -sia.clone(), sia, coa))
+        Self::from_matrix_unchecked(Matrix2::new(coa, -sia, sia, coa))
     }
 
     /// Builds a 2 dimensional rotation matrix from an angle in radian wrapped in a 1-dimensional vector.
@@ -54,7 +52,7 @@ impl<T: SimdRealField> Rotation2<T> {
     /// the `::new(angle)` method instead is more common.
     #[inline]
     pub fn from_scaled_axis<SB: Storage<T, U1>>(axisangle: Vector<T, U1, SB>) -> Self {
-        Self::new(axisangle[0].clone())
+        Self::new(axisangle[0])
     }
 }
 
@@ -62,7 +60,7 @@ impl<T: SimdRealField> Rotation2<T> {
 impl<T: SimdRealField> Rotation2<T> {
     /// Builds a rotation from a basis assumed to be orthonormal.
     ///
-    /// In order to get a valid rotation matrix, the input must be an
+    /// In order to get a valid unit-quaternion, the input must be an
     /// orthonormal basis, i.e., all vectors are normalized, and the are
     /// all orthogonal to each other. These invariants are not checked
     /// by this method.
@@ -110,7 +108,7 @@ impl<T: SimdRealField> Rotation2<T> {
             let denom = rot.column(0).dot(&m.column(0)) + rot.column(1).dot(&m.column(1));
 
             let angle = axis / (denom.abs() + T::default_epsilon());
-            if angle.clone().abs() > eps {
+            if angle.abs() > eps {
                 rot = Self::new(angle) * rot;
             } else {
                 break;
@@ -188,7 +186,6 @@ impl<T: SimdRealField> Rotation2<T> {
     /// assert_relative_eq!(rot_to.inverse() * rot2, rot1);
     /// ```
     #[inline]
-    #[must_use]
     pub fn rotation_to(&self, other: &Self) -> Self {
         other * self.inverse()
     }
@@ -200,13 +197,13 @@ impl<T: SimdRealField> Rotation2<T> {
     where
         T: RealField,
     {
-        let mut c = UnitComplex::from(self.clone());
+        let mut c = UnitComplex::from(*self);
         let _ = c.renormalize();
 
         *self = Self::from_matrix_eps(self.matrix(), T::default_epsilon(), 0, c.into())
     }
 
-    /// Raise the rotation to a given floating power, i.e., returns the rotation with the angle
+    /// Raise the quaternion to a given floating power, i.e., returns the rotation with the angle
     /// of `self` multiplied by `n`.
     ///
     /// # Example
@@ -218,7 +215,6 @@ impl<T: SimdRealField> Rotation2<T> {
     /// assert_relative_eq!(pow.angle(), 2.0 * 0.78);
     /// ```
     #[inline]
-    #[must_use]
     pub fn powf(&self, n: T) -> Self {
         Self::new(self.angle() * n)
     }
@@ -236,11 +232,8 @@ impl<T: SimdRealField> Rotation2<T> {
     /// assert_relative_eq!(rot.angle(), 1.78);
     /// ```
     #[inline]
-    #[must_use]
     pub fn angle(&self) -> T {
-        self.matrix()[(1, 0)]
-            .clone()
-            .simd_atan2(self.matrix()[(0, 0)].clone())
+        self.matrix()[(1, 0)].simd_atan2(self.matrix()[(0, 0)])
     }
 
     /// The rotation angle needed to make `self` and `other` coincide.
@@ -254,7 +247,6 @@ impl<T: SimdRealField> Rotation2<T> {
     /// assert_relative_eq!(rot1.angle_to(&rot2), 1.6);
     /// ```
     #[inline]
-    #[must_use]
     pub fn angle_to(&self, other: &Self) -> T {
         self.rotation_to(other).angle()
     }
@@ -264,7 +256,6 @@ impl<T: SimdRealField> Rotation2<T> {
     /// This is generally used in the context of generic programming. Using
     /// the `.angle()` method instead is more common.
     #[inline]
-    #[must_use]
     pub fn scaled_axis(&self) -> SVector<T, 1> {
         Vector1::new(self.angle())
     }
@@ -278,7 +269,7 @@ where
 {
     /// Generate a uniformly distributed random rotation.
     #[inline]
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Rotation2<T> {
+    fn sample<'a, R: Rng + ?Sized>(&self, rng: &'a mut R) -> Rotation2<T> {
         let twopi = Uniform::new(T::zero(), T::simd_two_pi());
         Rotation2::new(rng.sample(twopi))
     }
@@ -386,27 +377,27 @@ where
     where
         SB: Storage<T, U3>,
     {
-        angle.clone().simd_ne(T::zero()).if_else(
+        angle.simd_ne(T::zero()).if_else(
             || {
-                let ux = axis.as_ref()[0].clone();
-                let uy = axis.as_ref()[1].clone();
-                let uz = axis.as_ref()[2].clone();
-                let sqx = ux.clone() * ux.clone();
-                let sqy = uy.clone() * uy.clone();
-                let sqz = uz.clone() * uz.clone();
+                let ux = axis.as_ref()[0];
+                let uy = axis.as_ref()[1];
+                let uz = axis.as_ref()[2];
+                let sqx = ux * ux;
+                let sqy = uy * uy;
+                let sqz = uz * uz;
                 let (sin, cos) = angle.simd_sin_cos();
-                let one_m_cos = T::one() - cos.clone();
+                let one_m_cos = T::one() - cos;
 
                 Self::from_matrix_unchecked(SMatrix::<T, 3, 3>::new(
-                    sqx.clone() + (T::one() - sqx) * cos.clone(),
-                    ux.clone() * uy.clone() * one_m_cos.clone() - uz.clone() * sin.clone(),
-                    ux.clone() * uz.clone() * one_m_cos.clone() + uy.clone() * sin.clone(),
-                    ux.clone() * uy.clone() * one_m_cos.clone() + uz.clone() * sin.clone(),
-                    sqy.clone() + (T::one() - sqy) * cos.clone(),
-                    uy.clone() * uz.clone() * one_m_cos.clone() - ux.clone() * sin.clone(),
-                    ux.clone() * uz.clone() * one_m_cos.clone() - uy.clone() * sin.clone(),
+                    sqx + (T::one() - sqx) * cos,
+                    ux * uy * one_m_cos - uz * sin,
+                    ux * uz * one_m_cos + uy * sin,
+                    ux * uy * one_m_cos + uz * sin,
+                    sqy + (T::one() - sqy) * cos,
+                    uy * uz * one_m_cos - ux * sin,
+                    ux * uz * one_m_cos - uy * sin,
                     uy * uz * one_m_cos + ux * sin,
-                    sqz.clone() + (T::one() - sqz) * cos,
+                    sqz + (T::one() - sqz) * cos,
                 ))
             },
             Self::identity,
@@ -433,14 +424,14 @@ where
         let (sy, cy) = yaw.simd_sin_cos();
 
         Self::from_matrix_unchecked(SMatrix::<T, 3, 3>::new(
-            cy.clone() * cp.clone(),
-            cy.clone() * sp.clone() * sr.clone() - sy.clone() * cr.clone(),
-            cy.clone() * sp.clone() * cr.clone() + sy.clone() * sr.clone(),
-            sy.clone() * cp.clone(),
-            sy.clone() * sp.clone() * sr.clone() + cy.clone() * cr.clone(),
-            sy * sp.clone() * cr.clone() - cy * sr.clone(),
+            cy * cp,
+            cy * sp * sr - sy * cr,
+            cy * sp * cr + sy * sr,
+            sy * cp,
+            sy * sp * sr + cy * cr,
+            sy * sp * cr - cy * sr,
             -sp,
-            cp.clone() * sr,
+            cp * sr,
             cp * cr,
         ))
     }
@@ -483,19 +474,11 @@ where
         let yaxis = zaxis.cross(&xaxis).normalize();
 
         Self::from_matrix_unchecked(SMatrix::<T, 3, 3>::new(
-            xaxis.x.clone(),
-            yaxis.x.clone(),
-            zaxis.x.clone(),
-            xaxis.y.clone(),
-            yaxis.y.clone(),
-            zaxis.y.clone(),
-            xaxis.z.clone(),
-            yaxis.z.clone(),
-            zaxis.z.clone(),
+            xaxis.x, yaxis.x, zaxis.x, xaxis.y, yaxis.y, zaxis.y, xaxis.z, yaxis.z, zaxis.z,
         ))
     }
 
-    /// Deprecated: Use [`Rotation3::face_towards`] instead.
+    /// Deprecated: Use [Rotation3::face_towards] instead.
     #[deprecated(note = "renamed to `face_towards`")]
     pub fn new_observer_frames<SB, SC>(dir: &Vector<T, U3, SB>, up: &Vector<T, U3, SC>) -> Self
     where
@@ -657,12 +640,11 @@ where
     /// assert_relative_eq!(rot_to * rot1, rot2, epsilon = 1.0e-6);
     /// ```
     #[inline]
-    #[must_use]
     pub fn rotation_to(&self, other: &Self) -> Self {
         other * self.inverse()
     }
 
-    /// Raise the rotation to a given floating power, i.e., returns the rotation with the same
+    /// Raise the quaternion to a given floating power, i.e., returns the rotation with the same
     /// axis as `self` and an angle equal to `self.angle()` multiplied by `n`.
     ///
     /// # Example
@@ -677,7 +659,6 @@ where
     /// assert_eq!(pow.angle(), 2.4);
     /// ```
     #[inline]
-    #[must_use]
     pub fn powf(&self, n: T) -> Self
     where
         T: RealField,
@@ -694,7 +675,7 @@ where
 
     /// Builds a rotation from a basis assumed to be orthonormal.
     ///
-    /// In order to get a valid rotation matrix, the input must be an
+    /// In order to get a valid unit-quaternion, the input must be an
     /// orthonormal basis, i.e., all vectors are normalized, and the are
     /// all orthogonal to each other. These invariants are not checked
     /// by this method.
@@ -732,12 +713,9 @@ where
         T: RealField,
     {
         if max_iter == 0 {
-            max_iter = usize::MAX;
+            max_iter = usize::max_value();
         }
 
-        // Using sqrt(eps) ensures we perturb with something larger than eps; clamp to eps to handle the case of eps > 1.0
-        let eps_disturbance = eps.clone().sqrt().max(eps.clone() * eps.clone());
-        let mut perturbation_axes = Vector3::x_axis();
         let mut rot = guess.into_inner();
 
         for _ in 0..max_iter {
@@ -750,36 +728,10 @@ where
 
             let axisangle = axis / (denom.abs() + T::default_epsilon());
 
-            if let Some((axis, angle)) = Unit::try_new_and_get(axisangle, eps.clone()) {
+            if let Some((axis, angle)) = Unit::try_new_and_get(axisangle, eps) {
                 rot = Rotation3::from_axis_angle(&axis, angle) * rot;
             } else {
-                // Check if stuck in a maximum w.r.t. the norm (m - rot).norm()
-                let mut perturbed = rot.clone();
-                let norm_squared = (m - &rot).norm_squared();
-                let mut new_norm_squared: T;
-
-                // Perturb until the new norm is significantly different
-                loop {
-                    perturbed *=
-                        Rotation3::from_axis_angle(&perturbation_axes, eps_disturbance.clone());
-                    new_norm_squared = (m - &perturbed).norm_squared();
-                    if abs_diff_ne!(
-                        norm_squared,
-                        new_norm_squared,
-                        epsilon = T::default_epsilon()
-                    ) {
-                        break;
-                    }
-                }
-
-                // If new norm is larger, it's a minimum
-                if norm_squared < new_norm_squared {
-                    break;
-                }
-
-                // If not, continue from perturbed rotation, but use a different axes for the next perturbation
-                perturbation_axes = UnitVector3::new_unchecked(perturbation_axes.yzx());
-                rot = perturbed;
+                break;
             }
         }
 
@@ -793,7 +745,7 @@ where
     where
         T: RealField,
     {
-        let mut c = UnitQuaternion::from(self.clone());
+        let mut c = UnitQuaternion::from(*self);
         let _ = c.renormalize();
 
         *self = Self::from_matrix_eps(self.matrix(), T::default_epsilon(), 0, c.into())
@@ -813,12 +765,8 @@ impl<T: SimdRealField> Rotation3<T> {
     /// assert_relative_eq!(rot.angle(), 1.78);
     /// ```
     #[inline]
-    #[must_use]
     pub fn angle(&self) -> T {
-        ((self.matrix()[(0, 0)].clone()
-            + self.matrix()[(1, 1)].clone()
-            + self.matrix()[(2, 2)].clone()
-            - T::one())
+        ((self.matrix()[(0, 0)] + self.matrix()[(1, 1)] + self.matrix()[(2, 2)] - T::one())
             / crate::convert(2.0))
         .simd_acos()
     }
@@ -839,16 +787,14 @@ impl<T: SimdRealField> Rotation3<T> {
     /// assert!(rot.axis().is_none());
     /// ```
     #[inline]
-    #[must_use]
     pub fn axis(&self) -> Option<Unit<Vector3<T>>>
     where
         T: RealField,
     {
-        let rotmat = self.matrix();
         let axis = SVector::<T, 3>::new(
-            rotmat[(2, 1)].clone() - rotmat[(1, 2)].clone(),
-            rotmat[(0, 2)].clone() - rotmat[(2, 0)].clone(),
-            rotmat[(1, 0)].clone() - rotmat[(0, 1)].clone(),
+            self.matrix()[(2, 1)] - self.matrix()[(1, 2)],
+            self.matrix()[(0, 2)] - self.matrix()[(2, 0)],
+            self.matrix()[(1, 0)] - self.matrix()[(0, 1)],
         );
 
         Unit::try_new(axis, T::default_epsilon())
@@ -865,7 +811,6 @@ impl<T: SimdRealField> Rotation3<T> {
     /// assert_relative_eq!(rot.scaled_axis(), axisangle, epsilon = 1.0e-6);
     /// ```
     #[inline]
-    #[must_use]
     pub fn scaled_axis(&self) -> Vector3<T>
     where
         T: RealField,
@@ -877,7 +822,7 @@ impl<T: SimdRealField> Rotation3<T> {
         }
     }
 
-    /// The rotation axis and angle in ]0, pi] of this rotation matrix.
+    /// The rotation axis and angle in ]0, pi] of this unit quaternion.
     ///
     /// Returns `None` if the angle is zero.
     ///
@@ -897,12 +842,15 @@ impl<T: SimdRealField> Rotation3<T> {
     /// assert!(rot.axis_angle().is_none());
     /// ```
     #[inline]
-    #[must_use]
     pub fn axis_angle(&self) -> Option<(Unit<Vector3<T>>, T)>
     where
         T: RealField,
     {
-        self.axis().map(|axis| (axis, self.angle()))
+        if let Some(axis) = self.axis() {
+            Some((axis, self.angle()))
+        } else {
+            None
+        }
     }
 
     /// The rotation angle needed to make `self` and `other` coincide.
@@ -916,7 +864,6 @@ impl<T: SimdRealField> Rotation3<T> {
     /// assert_relative_eq!(rot1.angle_to(&rot2), 1.0045657, epsilon = 1.0e-6);
     /// ```
     #[inline]
-    #[must_use]
     pub fn angle_to(&self, other: &Self) -> T
     where
         T::Element: SimdRealField,
@@ -928,7 +875,7 @@ impl<T: SimdRealField> Rotation3<T> {
     ///
     /// The angles are produced in the form (roll, pitch, yaw).
     #[deprecated(note = "This is renamed to use `.euler_angles()`.")]
-    pub fn to_euler_angles(self) -> (T, T, T)
+    pub fn to_euler_angles(&self) -> (T, T, T)
     where
         T: RealField,
     {
@@ -949,29 +896,22 @@ impl<T: SimdRealField> Rotation3<T> {
     /// assert_relative_eq!(euler.1, 0.2, epsilon = 1.0e-6);
     /// assert_relative_eq!(euler.2, 0.3, epsilon = 1.0e-6);
     /// ```
-    #[must_use]
     pub fn euler_angles(&self) -> (T, T, T)
     where
         T: RealField,
     {
         // Implementation informed by "Computing Euler angles from a rotation matrix", by Gregory G. Slabaugh
         //  https://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.371.6578
-        if self[(2, 0)].clone().abs() < T::one() {
-            let yaw = -self[(2, 0)].clone().asin();
-            let roll = (self[(2, 1)].clone() / yaw.clone().cos())
-                .atan2(self[(2, 2)].clone() / yaw.clone().cos());
-            let pitch = (self[(1, 0)].clone() / yaw.clone().cos())
-                .atan2(self[(0, 0)].clone() / yaw.clone().cos());
+        if self[(2, 0)].abs() < T::one() {
+            let yaw = -self[(2, 0)].asin();
+            let roll = (self[(2, 1)] / yaw.cos()).atan2(self[(2, 2)] / yaw.cos());
+            let pitch = (self[(1, 0)] / yaw.cos()).atan2(self[(0, 0)] / yaw.cos());
             (roll, yaw, pitch)
-        } else if self[(2, 0)].clone() <= -T::one() {
-            (
-                self[(0, 1)].clone().atan2(self[(0, 2)].clone()),
-                T::frac_pi_2(),
-                T::zero(),
-            )
+        } else if self[(2, 0)] <= -T::one() {
+            (self[(0, 1)].atan2(self[(0, 2)]), T::frac_pi_2(), T::zero())
         } else {
             (
-                -self[(0, 1)].clone().atan2(-self[(0, 2)].clone()),
+                -self[(0, 1)].atan2(-self[(0, 2)]),
                 -T::frac_pi_2(),
                 T::zero(),
             )
@@ -998,8 +938,8 @@ where
         let theta = rng.sample(&twopi);
         let (ts, tc) = theta.simd_sin_cos();
         let a = SMatrix::<T, 3, 3>::new(
-            tc.clone(),
-            ts.clone(),
+            tc,
+            ts,
             T::zero(),
             -ts,
             tc,
@@ -1013,10 +953,10 @@ where
         let phi = rng.sample(&twopi);
         let z = rng.sample(OpenClosed01);
         let (ps, pc) = phi.simd_sin_cos();
-        let sqrt_z = z.clone().simd_sqrt();
-        let v = Vector3::new(pc * sqrt_z.clone(), ps * sqrt_z, (T::one() - z).simd_sqrt());
-        let mut b = v.clone() * v.transpose();
-        b += b.clone();
+        let sqrt_z = z.simd_sqrt();
+        let v = Vector3::new(pc * sqrt_z, ps * sqrt_z, (T::one() - z).simd_sqrt());
+        let mut b = v * v.transpose();
+        b += b;
         b -= SMatrix::<T, 3, 3>::identity();
 
         Rotation3::from_matrix_unchecked(b * a)

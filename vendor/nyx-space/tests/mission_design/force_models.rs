@@ -4,7 +4,7 @@ use nyx::cosmic::{Cosm, Orbit, Spacecraft};
 use nyx::dynamics::{Drag, OrbitalDynamics, SolarPressure, SpacecraftDynamics};
 use nyx::linalg::Vector6;
 use nyx::propagators::Propagator;
-use nyx::time::{Epoch, Unit};
+use nyx::time::{Epoch, TimeUnit};
 use nyx::utils::rss_orbit_vec_errors;
 
 #[test]
@@ -16,7 +16,7 @@ fn srp_earth_full_vis() {
 
     let orbit = Orbit::keplerian(24396.0, 0.0, 0.0, 0.0, 0.0, 0.0, dt, eme2k);
 
-    let prop_time = 24 * Unit::Day;
+    let prop_time = 24 * TimeUnit::Day;
 
     // Define the dynamics
 
@@ -66,7 +66,7 @@ fn srp_earth_leo() {
 
     let orbit = Orbit::keplerian(7_000.0, 0.0, 0.0, 0.0, 0.0, 0.0, dt, eme2k);
 
-    let prop_time = 24 * Unit::Day;
+    let prop_time = 24 * TimeUnit::Day;
 
     // Define the dynamics
 
@@ -117,7 +117,7 @@ fn srp_earth_meo_ecc_inc() {
 
     let orbit = Orbit::keplerian(14_000.0, 0.5, 20.0, 0.0, 0.0, 0.0, dt, eme2k);
 
-    let prop_time = 24 * Unit::Day;
+    let prop_time = 24 * TimeUnit::Day;
 
     // Define the dynamics
 
@@ -208,7 +208,7 @@ fn exp_drag_earth() {
 
     let orbit = Orbit::keplerian(24396.0, 0.0, 0.0, 0.0, 0.0, 0.0, dt, eme2k);
 
-    let prop_time = 24 * Unit::Day;
+    let prop_time = 24 * TimeUnit::Day;
 
     // Define the dynamics
 
@@ -223,7 +223,7 @@ fn exp_drag_earth() {
 
     let sc = Spacecraft::from_srp_defaults(orbit, dry_mass, 1.0).with_drag(1.0, 2.0);
 
-    let setup = Propagator::default_dp78(sc_dyn);
+    let setup = Propagator::default(sc_dyn);
     let mut prop = setup.with(sc);
     prop.for_duration(prop_time).unwrap();
 
@@ -241,7 +241,7 @@ fn std_atm_drag_earth() {
 
     let orbit = Orbit::keplerian(24396.0, 0.0, 0.0, 0.0, 0.0, 0.0, dt, eme2k);
 
-    let prop_time = 24 * Unit::Day;
+    let prop_time = 24 * TimeUnit::Day;
 
     // Define the dynamics
 
@@ -256,7 +256,7 @@ fn std_atm_drag_earth() {
 
     let sc = Spacecraft::from_srp_defaults(orbit, dry_mass, 1.0).with_drag(1.0, 2.0);
 
-    let setup = Propagator::default_dp78(sc_dyn);
+    let setup = Propagator::default(sc_dyn);
     let mut prop = setup.with(sc);
     prop.for_duration(prop_time).unwrap();
 
@@ -296,7 +296,7 @@ fn std_atm_drag_earth_low() {
         eme2k,
     );
 
-    let prop_time = 24 * Unit::Day;
+    let prop_time = 24 * TimeUnit::Day;
 
     // Define the dynamics
 
@@ -311,7 +311,7 @@ fn std_atm_drag_earth_low() {
 
     let sc = Spacecraft::from_srp_defaults(orbit, dry_mass, 1.0).with_drag(1.0, 2.0);
 
-    let setup = Propagator::default_dp78(sc_dyn);
+    let setup = Propagator::default(sc_dyn);
     let mut prop = setup.with(sc);
     prop.for_duration(prop_time).unwrap();
 

@@ -5,19 +5,20 @@ use std::ops::{DivAssign, MulAssign};
 
 use crate::allocator::Allocator;
 use crate::base::dimension::Dim;
+use crate::base::storage::Storage;
 use crate::base::{Const, DefaultAllocator, OMatrix, OVector};
 
-/// Applies in-place a modified Parlett and Reinsch matrix balancing with 2-norm to the matrix and returns
+/// Applies in-place a modified Parlett and Reinsch matrix balancing with 2-norm to the matrix `m` and returns
 /// the corresponding diagonal transformation.
 ///
-/// See <https://arxiv.org/pdf/1401.5766.pdf>
-pub fn balance_parlett_reinsch<T: RealField, D: Dim>(matrix: &mut OMatrix<T, D, D>) -> OVector<T, D>
+/// See https://arxiv.org/pdf/1401.5766.pdf
+pub fn balance_parlett_reinsch<T: RealField, D: Dim>(m: &mut OMatrix<T, D, D>) -> OVector<T, D>
 where
     DefaultAllocator: Allocator<T, D, D> + Allocator<T, D>,
 {
-    assert!(matrix.is_square(), "Unable to balance a non-square matrix.");
+    assert!(m.is_square(), "Unable to balance a non-square matrix.");
 
-    let dim = matrix.shape_generic().0;
+    let dim = m.data.shape().0;
     let radix: T = crate::convert(2.0f64);
     let mut d = OVector::from_element_generic(dim, Const::<1>, T::one());
 
@@ -27,37 +28,36 @@ where
         converged = true;
 
         for i in 0..dim.value() {
-            let mut n_col = matrix.column(i).norm_squared();
-            let mut n_row = matrix.row(i).norm_squared();
+            let mut c = m.column(i).norm_squared();
+            let mut r = m.row(i).norm_squared();
             let mut f = T::one();
 
-            let s = n_col.clone() + n_row.clone();
-            n_col = n_col.sqrt();
-            n_row = n_row.sqrt();
+            let s = c + r;
+            c = c.sqrt();
+            r = r.sqrt();
 
-            if n_col.clone().is_zero() || n_row.clone().is_zero() {
+            if c.is_zero() || r.is_zero() {
                 continue;
             }
 
-            while n_col.clone() < n_row.clone() / radix.clone() {
-                n_col *= radix.clone();
-                n_row /= radix.clone();
-                f *= radix.clone();
+            while c < r / radix {
+                c *= radix;
+                r /= radix;
+                f *= radix;
             }
 
-            while n_col.clone() >= n_row.clone() * radix.clone() {
-                n_col /= radix.clone();
-                n_row *= radix.clone();
-                f /= radix.clone();
+            while c >= r * radix {
+                c /= radix;
+                r *= radix;
+                f /= radix;
             }
 
             let eps: T = crate::convert(0.95);
-            #[allow(clippy::suspicious_operation_groupings)]
-            if n_col.clone() * n_col + n_row.clone() * n_row < eps * s {
+            if c * c + r * r < eps * s {
                 converged = false;
-                d[i] *= f.clone();
-                matrix.column_mut(i).mul_assign(f.clone());
-                matrix.row_mut(i).div_assign(f.clone());
+                d[i] *= f;
+                m.column_mut(i).mul_assign(f);
+                m.row_mut(i).div_assign(f);
             }
         }
     }
@@ -75,10 +75,10 @@ where
 
     for j in 0..d.len() {
         let mut col = m.column_mut(j);
-        let denom = T::one() / d[j].clone();
+        let denom = T::one() / d[j];
 
         for i in 0..d.len() {
-            col[i] *= d[i].clone() * denom.clone();
+            col[i] *= d[i] * denom;
         }
     }
 }

@@ -1,6 +1,3 @@
-// The macros break if the references are taken out, for some reason.
-#![allow(clippy::op_ref)]
-
 use crate::{
     Isometry3, Matrix4, Normed, OVector, Point3, Quaternion, Scalar, SimdRealField, Translation3,
     Unit, UnitQuaternion, Vector3, Zero, U8,
@@ -16,10 +13,9 @@ use simba::scalar::{ClosedNeg, RealField};
 ///
 /// # Indexing
 ///
-/// `DualQuaternions` are stored as \[..real, ..dual\].
+/// DualQuaternions are stored as \[..real, ..dual\].
 /// Both of the quaternion components are laid out in `i, j, k, w` order.
 ///
-/// # Example
 /// ```
 /// # use nalgebra::{DualQuaternion, Quaternion};
 ///
@@ -37,29 +33,14 @@ use simba::scalar::{ClosedNeg, RealField};
 /// NOTE:
 ///  As of December 2020, dual quaternion support is a work in progress.
 ///  If a feature that you need is missing, feel free to open an issue or a PR.
-///  See <https://github.com/dimforge/nalgebra/issues/487>
+///  See https://github.com/dimforge/nalgebra/issues/487
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
-#[cfg_attr(feature = "rkyv-serialize", derive(bytecheck::CheckBytes))]
-#[cfg_attr(
-    feature = "rkyv-serialize-no-std",
-    derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)
-)]
-#[cfg_attr(feature = "cuda", derive(cust_core::DeviceCopy))]
-pub struct DualQuaternion<T> {
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+pub struct DualQuaternion<T: Scalar> {
     /// The real component of the quaternion
     pub real: Quaternion<T>,
     /// The dual component of the quaternion
     pub dual: Quaternion<T>,
-}
-
-impl<T: Scalar + Eq> Eq for DualQuaternion<T> {}
-
-impl<T: Scalar> PartialEq for DualQuaternion<T> {
-    #[inline]
-    fn eq(&self, right: &Self) -> bool {
-        self.real == right.real && self.dual == right.dual
-    }
 }
 
 impl<T: Scalar + Zero> Default for DualQuaternion<T> {
@@ -94,10 +75,7 @@ where
     pub fn normalize(&self) -> Self {
         let real_norm = self.real.norm();
 
-        Self::from_real_and_dual(
-            self.real.clone() / real_norm.clone(),
-            self.dual.clone() / real_norm,
-        )
+        Self::from_real_and_dual(self.real / real_norm, self.dual / real_norm)
     }
 
     /// Normalizes this quaternion.
@@ -117,8 +95,8 @@ where
     #[inline]
     pub fn normalize_mut(&mut self) -> T {
         let real_norm = self.real.norm();
-        self.real /= real_norm.clone();
-        self.dual /= real_norm.clone();
+        self.real /= real_norm;
+        self.dual /= real_norm;
         real_norm
     }
 
@@ -192,7 +170,7 @@ where
     where
         T: RealField,
     {
-        let mut res = self.clone();
+        let mut res = *self;
         if res.try_inverse_mut() {
             Some(res)
         } else {
@@ -226,7 +204,7 @@ where
     {
         let inverted = self.real.try_inverse_mut();
         if inverted {
-            self.dual = -self.real.clone() * self.dual.clone() * self.real.clone();
+            self.dual = -self.real * self.dual * self.real;
             true
         } else {
             false
@@ -254,26 +232,9 @@ where
     /// ));
     /// ```
     #[inline]
-    #[must_use]
     pub fn lerp(&self, other: &Self, t: T) -> Self {
-        self * (T::one() - t.clone()) + other * t
+        self * (T::one() - t) + other * t
     }
-}
-
-#[cfg(feature = "bytemuck")]
-unsafe impl<T> bytemuck::Zeroable for DualQuaternion<T>
-where
-    T: Scalar + bytemuck::Zeroable,
-    Quaternion<T>: bytemuck::Zeroable,
-{
-}
-
-#[cfg(feature = "bytemuck")]
-unsafe impl<T> bytemuck::Pod for DualQuaternion<T>
-where
-    T: Scalar + bytemuck::Pod,
-    Quaternion<T>: bytemuck::Pod,
-{
 }
 
 #[cfg(feature = "serde-serialize-no-std")]
@@ -303,14 +264,14 @@ where
         let dq: Dq<T> = Dq::<T>::deserialize(deserializer)?;
 
         Ok(Self {
-            real: Quaternion::new(dq[3].clone(), dq[0].clone(), dq[1].clone(), dq[2].clone()),
-            dual: Quaternion::new(dq[7].clone(), dq[4].clone(), dq[5].clone(), dq[6].clone()),
+            real: Quaternion::new(dq[3], dq[0], dq[1], dq[2]),
+            dual: Quaternion::new(dq[7], dq[4], dq[5], dq[6]),
         })
     }
 }
 
 impl<T: RealField> DualQuaternion<T> {
-    fn to_vector(self) -> OVector<T, U8> {
+    fn to_vector(&self) -> OVector<T, U8> {
         self.as_ref().clone().into()
     }
 }
@@ -325,9 +286,9 @@ impl<T: RealField + AbsDiffEq<Epsilon = T>> AbsDiffEq for DualQuaternion<T> {
 
     #[inline]
     fn abs_diff_eq(&self, other: &Self, epsilon: Self::Epsilon) -> bool {
-        self.clone().to_vector().abs_diff_eq(&other.clone().to_vector(), epsilon.clone()) ||
+        self.to_vector().abs_diff_eq(&other.to_vector(), epsilon) ||
         // Account for the double-covering of S², i.e. q = -q
-        self.clone().to_vector().iter().zip(other.clone().to_vector().iter()).all(|(a, b)| a.abs_diff_eq(&-b.clone(), epsilon.clone()))
+        self.to_vector().iter().zip(other.to_vector().iter()).all(|(a, b)| a.abs_diff_eq(&-*b, epsilon))
     }
 }
 
@@ -344,9 +305,9 @@ impl<T: RealField + RelativeEq<Epsilon = T>> RelativeEq for DualQuaternion<T> {
         epsilon: Self::Epsilon,
         max_relative: Self::Epsilon,
     ) -> bool {
-        self.clone().to_vector().relative_eq(&other.clone().to_vector(), epsilon.clone(), max_relative.clone()) ||
+        self.to_vector().relative_eq(&other.to_vector(), epsilon, max_relative) ||
         // Account for the double-covering of S², i.e. q = -q
-        self.clone().to_vector().iter().zip(other.clone().to_vector().iter()).all(|(a, b)| a.relative_eq(&-b.clone(), epsilon.clone(), max_relative.clone()))
+        self.to_vector().iter().zip(other.to_vector().iter()).all(|(a, b)| a.relative_eq(&-*b, epsilon, max_relative))
     }
 }
 
@@ -358,14 +319,13 @@ impl<T: RealField + UlpsEq<Epsilon = T>> UlpsEq for DualQuaternion<T> {
 
     #[inline]
     fn ulps_eq(&self, other: &Self, epsilon: Self::Epsilon, max_ulps: u32) -> bool {
-        self.clone().to_vector().ulps_eq(&other.clone().to_vector(), epsilon.clone(), max_ulps) ||
+        self.to_vector().ulps_eq(&other.to_vector(), epsilon, max_ulps) ||
         // Account for the double-covering of S², i.e. q = -q.
-        self.clone().to_vector().iter().zip(other.clone().to_vector().iter()).all(|(a, b)| a.ulps_eq(&-b.clone(), epsilon.clone(), max_ulps))
+        self.to_vector().iter().zip(other.to_vector().iter()).all(|(a, b)| a.ulps_eq(&-*b, epsilon, max_ulps))
     }
 }
 
-/// A unit dual quaternion. May be used to represent a rotation followed by a
-/// translation.
+/// A unit quaternions. May be used to represent a rotation followed by a translation.
 pub type UnitDualQuaternion<T> = Unit<DualQuaternion<T>>;
 
 impl<T: Scalar + ClosedNeg + PartialEq + SimdRealField> PartialEq for UnitDualQuaternion<T> {
@@ -392,13 +352,13 @@ impl<T: SimdRealField> Normed for DualQuaternion<T> {
 
     #[inline]
     fn scale_mut(&mut self, n: Self::Norm) {
-        self.real.scale_mut(n.clone());
+        self.real.scale_mut(n);
         self.dual.scale_mut(n);
     }
 
     #[inline]
     fn unscale_mut(&mut self, n: Self::Norm) {
-        self.real.unscale_mut(n.clone());
+        self.real.unscale_mut(n);
         self.dual.unscale_mut(n);
     }
 }
@@ -421,7 +381,6 @@ where
     /// ));
     /// ```
     #[inline]
-    #[must_use]
     pub fn dual_quaternion(&self) -> &DualQuaternion<T> {
         self.as_ref()
     }
@@ -482,10 +441,10 @@ where
     #[inline]
     #[must_use = "Did you mean to use inverse_mut()?"]
     pub fn inverse(&self) -> Self {
-        let real = Unit::new_unchecked(self.as_ref().real.clone())
+        let real = Unit::new_unchecked(self.as_ref().real)
             .inverse()
             .into_inner();
-        let dual = -real.clone() * self.as_ref().dual.clone() * real.clone();
+        let dual = -real * self.as_ref().dual * real;
         UnitDualQuaternion::new_unchecked(DualQuaternion { real, dual })
     }
 
@@ -504,12 +463,11 @@ where
     /// assert_relative_eq!(inv * unit, UnitDualQuaternion::identity(), epsilon = 1.0e-6);
     /// ```
     #[inline]
+    #[must_use = "Did you mean to use inverse_mut()?"]
     pub fn inverse_mut(&mut self) {
         let quat = self.as_mut_unchecked();
-        quat.real = Unit::new_unchecked(quat.real.clone())
-            .inverse()
-            .into_inner();
-        quat.dual = -quat.real.clone() * quat.dual.clone() * quat.real.clone();
+        quat.real = Unit::new_unchecked(quat.real).inverse().into_inner();
+        quat.dual = -quat.real * quat.dual * quat.real;
     }
 
     /// The unit dual quaternion needed to make `self` and `other` coincide.
@@ -528,7 +486,6 @@ where
     /// assert_relative_eq!(dq_to * dq1, dq2, epsilon = 1.0e-6);
     /// ```
     #[inline]
-    #[must_use]
     pub fn isometry_to(&self, other: &Self) -> Self {
         other / self
     }
@@ -561,7 +518,6 @@ where
     /// );
     /// ```
     #[inline]
-    #[must_use]
     pub fn lerp(&self, other: &Self, t: T) -> DualQuaternion<T> {
         self.as_ref().lerp(other.as_ref(), t)
     }
@@ -590,7 +546,6 @@ where
     /// ), epsilon = 1.0e-6);
     /// ```
     #[inline]
-    #[must_use]
     pub fn nlerp(&self, other: &Self, t: T) -> Self {
         let mut res = self.lerp(other, t);
         let _ = res.normalize_mut();
@@ -601,9 +556,8 @@ where
     /// Screw linear interpolation between two unit quaternions. This creates a
     /// smooth arc from one dual-quaternion to another.
     ///
-    /// Panics if the angle between both quaternion is 180 degrees (in which
-    /// case the interpolation is not well-defined). Use `.try_sclerp`
-    /// instead to avoid the panic.
+    /// Panics if the angle between both quaternion is 180 degrees (in which case the interpolation
+    /// is not well-defined). Use `.try_sclerp` instead to avoid the panic.
     ///
     /// # Example
     /// ```
@@ -626,9 +580,7 @@ where
     ///     dq.rotation().euler_angles().0, std::f32::consts::FRAC_PI_2, epsilon = 1.0e-6
     /// );
     /// assert_relative_eq!(dq.translation().vector.y, 3.0, epsilon = 1.0e-6);
-    /// ```
     #[inline]
-    #[must_use]
     pub fn sclerp(&self, other: &Self, t: T) -> Self
     where
         T: RealField,
@@ -637,34 +589,28 @@ where
             .expect("DualQuaternion sclerp: ambiguous configuration.")
     }
 
-    /// Computes the screw-linear interpolation between two unit quaternions or
-    /// returns `None` if both quaternions are approximately 180 degrees
-    /// apart (in which case the interpolation is not well-defined).
+    /// Computes the screw-linear interpolation between two unit quaternions or returns `None`
+    /// if both quaternions are approximately 180 degrees apart (in which case the interpolation is
+    /// not well-defined).
     ///
     /// # Arguments
     /// * `self`: the first quaternion to interpolate from.
     /// * `other`: the second quaternion to interpolate toward.
     /// * `t`: the interpolation parameter. Should be between 0 and 1.
-    /// * `epsilon`: the value below which the sinus of the angle separating
-    ///   both quaternion
+    /// * `epsilon`: the value below which the sinus of the angle separating both quaternion
     /// must be to return `None`.
     #[inline]
-    #[must_use]
     pub fn try_sclerp(&self, other: &Self, t: T, epsilon: T) -> Option<Self>
     where
         T: RealField,
     {
         let two = T::one() + T::one();
-        let half = T::one() / two.clone();
+        let half = T::one() / two;
 
         // Invert one of the quaternions if we've got a longest-path
         // interpolation.
         let other = {
             let dot_product = self.as_ref().real.coords.dot(&other.as_ref().real.coords);
-            if relative_eq!(dot_product, T::zero(), epsilon = epsilon.clone()) {
-                return None;
-            }
-
             if dot_product < T::zero() {
                 -other.clone()
             } else {
@@ -675,36 +621,27 @@ where
         let difference = self.as_ref().conjugate() * other.as_ref();
         let norm_squared = difference.real.vector().norm_squared();
         if relative_eq!(norm_squared, T::zero(), epsilon = epsilon) {
-            return Some(Self::from_parts(
-                self.translation()
-                    .vector
-                    .lerp(&other.translation().vector, t)
-                    .into(),
-                self.rotation(),
-            ));
+            return None;
         }
 
-        let scalar: T = difference.real.scalar();
-        let mut angle = two.clone() * scalar.acos();
-
-        let inverse_norm_squared: T = T::one() / norm_squared;
+        let inverse_norm_squared = T::one() / norm_squared;
         let inverse_norm = inverse_norm_squared.sqrt();
 
-        let mut pitch = -two * difference.dual.scalar() * inverse_norm.clone();
-        let direction = difference.real.vector() * inverse_norm.clone();
+        let mut angle = two * difference.real.scalar().acos();
+        let mut pitch = -two * difference.dual.scalar() * inverse_norm;
+        let direction = difference.real.vector() * inverse_norm;
         let moment = (difference.dual.vector()
-            - direction.clone() * (pitch.clone() * difference.real.scalar() * half.clone()))
+            - direction * (pitch * difference.real.scalar() * half))
             * inverse_norm;
 
-        angle *= t.clone();
+        angle *= t;
         pitch *= t;
 
-        let sin = (half.clone() * angle.clone()).sin();
-        let cos = (half.clone() * angle).cos();
-
-        let real = Quaternion::from_parts(cos.clone(), direction.clone() * sin.clone());
+        let sin = (half * angle).sin();
+        let cos = (half * angle).cos();
+        let real = Quaternion::from_parts(cos, direction * sin);
         let dual = Quaternion::from_parts(
-            -pitch.clone() * half.clone() * sin.clone(),
+            -pitch * half * sin,
             moment * sin + direction * (pitch * half * cos),
         );
 
@@ -717,7 +654,6 @@ where
 
     /// Return the rotation part of this unit dual quaternion.
     ///
-    /// # Example
     /// ```
     /// # #[macro_use] extern crate approx;
     /// # use nalgebra::{UnitDualQuaternion, UnitQuaternion, Vector3};
@@ -731,14 +667,12 @@ where
     /// );
     /// ```
     #[inline]
-    #[must_use]
     pub fn rotation(&self) -> UnitQuaternion<T> {
-        Unit::new_unchecked(self.as_ref().real.clone())
+        Unit::new_unchecked(self.as_ref().real)
     }
 
     /// Return the translation part of this unit dual quaternion.
     ///
-    /// # Example
     /// ```
     /// # #[macro_use] extern crate approx;
     /// # use nalgebra::{UnitDualQuaternion, UnitQuaternion, Vector3};
@@ -752,11 +686,10 @@ where
     /// );
     /// ```
     #[inline]
-    #[must_use]
     pub fn translation(&self) -> Translation3<T> {
         let two = T::one() + T::one();
         Translation3::from(
-            ((self.as_ref().dual.clone() * self.as_ref().real.clone().conjugate()) * two)
+            ((self.as_ref().dual * self.as_ref().real.conjugate()) * two)
                 .vector()
                 .into_owned(),
         )
@@ -764,7 +697,6 @@ where
 
     /// Builds an isometry from this unit dual quaternion.
     ///
-    /// # Example
     /// ```
     /// # #[macro_use] extern crate approx;
     /// # use nalgebra::{UnitDualQuaternion, UnitQuaternion, Vector3};
@@ -780,8 +712,7 @@ where
     /// assert_relative_eq!(iso.translation.vector, translation, epsilon = 1.0e-6);
     /// ```
     #[inline]
-    #[must_use]
-    pub fn to_isometry(self) -> Isometry3<T> {
+    pub fn to_isometry(&self) -> Isometry3<T> {
         Isometry3::from_parts(self.translation(), self.rotation())
     }
 
@@ -790,7 +721,6 @@ where
     ///
     /// This is the same as the multiplication `self * pt`.
     ///
-    /// # Example
     /// ```
     /// # #[macro_use] extern crate approx;
     /// # use nalgebra::{UnitDualQuaternion, UnitQuaternion, Vector3, Point3};
@@ -805,7 +735,6 @@ where
     /// );
     /// ```
     #[inline]
-    #[must_use]
     pub fn transform_point(&self, pt: &Point3<T>) -> Point3<T> {
         self * pt
     }
@@ -815,7 +744,6 @@ where
     ///
     /// This is the same as the multiplication `self * v`.
     ///
-    /// # Example
     /// ```
     /// # #[macro_use] extern crate approx;
     /// # use nalgebra::{UnitDualQuaternion, UnitQuaternion, Vector3};
@@ -830,7 +758,6 @@ where
     /// );
     /// ```
     #[inline]
-    #[must_use]
     pub fn transform_vector(&self, v: &Vector3<T>) -> Vector3<T> {
         self * v
     }
@@ -840,7 +767,6 @@ where
     /// This may be cheaper than inverting the unit dual quaternion and
     /// transforming the point.
     ///
-    /// # Example
     /// ```
     /// # #[macro_use] extern crate approx;
     /// # use nalgebra::{UnitDualQuaternion, UnitQuaternion, Vector3, Point3};
@@ -855,7 +781,6 @@ where
     /// );
     /// ```
     #[inline]
-    #[must_use]
     pub fn inverse_transform_point(&self, pt: &Point3<T>) -> Point3<T> {
         self.inverse() * pt
     }
@@ -866,7 +791,6 @@ where
     /// This may be cheaper than inverting the unit dual quaternion and
     /// transforming the vector.
     ///
-    /// # Example
     /// ```
     /// # #[macro_use] extern crate approx;
     /// # use nalgebra::{UnitDualQuaternion, UnitQuaternion, Vector3};
@@ -881,7 +805,6 @@ where
     /// );
     /// ```
     #[inline]
-    #[must_use]
     pub fn inverse_transform_vector(&self, v: &Vector3<T>) -> Vector3<T> {
         self.inverse() * v
     }
@@ -891,7 +814,6 @@ where
     /// cheaper than inverting the unit dual quaternion and transforming the
     /// vector.
     ///
-    /// # Example
     /// ```
     /// # #[macro_use] extern crate approx;
     /// # use nalgebra::{UnitDualQuaternion, UnitQuaternion, Unit, Vector3};
@@ -908,7 +830,6 @@ where
     /// );
     /// ```
     #[inline]
-    #[must_use]
     pub fn inverse_transform_unit_vector(&self, v: &Unit<Vector3<T>>) -> Unit<Vector3<T>> {
         self.inverse() * v
     }
@@ -921,7 +842,6 @@ where
     /// Converts this unit dual quaternion interpreted as an isometry
     /// into its equivalent homogeneous transformation matrix.
     ///
-    /// # Example
     /// ```
     /// # #[macro_use] extern crate approx;
     /// # use nalgebra::{Matrix4, UnitDualQuaternion, UnitQuaternion, Vector3};
@@ -937,8 +857,7 @@ where
     /// assert_relative_eq!(dq.to_homogeneous(), expected, epsilon = 1.0e-6);
     /// ```
     #[inline]
-    #[must_use]
-    pub fn to_homogeneous(self) -> Matrix4<T> {
+    pub fn to_homogeneous(&self) -> Matrix4<T> {
         self.to_isometry().to_homogeneous()
     }
 }
@@ -950,7 +869,7 @@ impl<T: RealField> Default for UnitDualQuaternion<T> {
 }
 
 impl<T: RealField + fmt::Display> fmt::Display for UnitDualQuaternion<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if let Some(axis) = self.rotation().axis() {
             let axis = axis.into_inner();
             write!(

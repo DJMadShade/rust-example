@@ -1,6 +1,9 @@
-use actix_web::{web, App, HttpResponse, HttpServer, Responder};
+use actix_web::body::Body;
+use actix_web::{web, App, HttpResponse, HttpServer};
 use mime_guess::from_path;
 use rust_embed::RustEmbed;
+
+use std::borrow::Cow;
 
 #[derive(RustEmbed)]
 #[folder = "examples/public/"]
@@ -8,24 +11,33 @@ struct Asset;
 
 fn handle_embedded_file(path: &str) -> HttpResponse {
   match Asset::get(path) {
-    Some(content) => HttpResponse::Ok()
-      .content_type(from_path(path).first_or_octet_stream().as_ref())
-      .body(content.data.into_owned()),
+    Some(content) => {
+      let body: Body = match content {
+        Cow::Borrowed(bytes) => bytes.into(),
+        Cow::Owned(bytes) => bytes.into(),
+      };
+      HttpResponse::Ok().content_type(from_path(path).first_or_octet_stream().as_ref()).body(body)
+    }
     None => HttpResponse::NotFound().body("404 Not Found"),
   }
 }
 
-#[actix_web::get("/")]
-async fn index() -> impl Responder {
+fn index() -> HttpResponse {
   handle_embedded_file("index.html")
 }
 
-#[actix_web::get("/dist/{_:.*}")]
-async fn dist(path: web::Path<String>) -> impl Responder {
-  handle_embedded_file(path.as_str())
+fn dist(path: web::Path<String>) -> HttpResponse {
+  handle_embedded_file(&path.0)
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-  HttpServer::new(|| App::new().service(index).service(dist)).bind("127.0.0.1:8000")?.run().await
+  HttpServer::new(|| {
+    App::new()
+      .service(web::resource("/").route(web::get().to(index)))
+      .service(web::resource("/dist/{_:.*}").route(web::get().to(dist)))
+  })
+  .bind("127.0.0.1:8000")?
+  .run()
+  .await
 }

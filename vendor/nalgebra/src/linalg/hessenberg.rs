@@ -4,11 +4,10 @@ use serde::{Deserialize, Serialize};
 use crate::allocator::Allocator;
 use crate::base::{DefaultAllocator, OMatrix, OVector};
 use crate::dimension::{Const, DimDiff, DimSub, U1};
+use crate::storage::Storage;
 use simba::scalar::ComplexField;
 
 use crate::linalg::householder;
-use crate::Matrix;
-use std::mem::MaybeUninit;
 
 /// Hessenberg decomposition of a general matrix.
 #[cfg_attr(feature = "serde-serialize-no-std", derive(Serialize, Deserialize))]
@@ -49,7 +48,9 @@ where
 {
     /// Computes the Hessenberg decomposition using householder reflections.
     pub fn new(hess: OMatrix<T, D, D>) -> Self {
-        let mut work = Matrix::zeros_generic(hess.shape_generic().0, Const::<1>);
+        let mut work = unsafe {
+            crate::unimplemented_or_uninitialized_generic!(hess.data.shape().0, Const::<1>)
+        };
         Self::new_with_workspace(hess, &mut work)
     }
 
@@ -63,7 +64,7 @@ where
             "Cannot compute the hessenberg decomposition of a non-square matrix."
         );
 
-        let dim = hess.shape_generic().0;
+        let dim = hess.data.shape().0;
 
         assert!(
             dim.value() != 0,
@@ -75,26 +76,18 @@ where
             "Hessenberg: invalid workspace size."
         );
 
-        if dim.value() == 0 {
-            return Hessenberg {
-                hess,
-                subdiag: Matrix::zeros_generic(dim.sub(Const::<1>), Const::<1>),
-            };
-        }
+        let mut subdiag = unsafe {
+            crate::unimplemented_or_uninitialized_generic!(dim.sub(Const::<1>), Const::<1>)
+        };
 
-        let mut subdiag = Matrix::uninit(dim.sub(Const::<1>), Const::<1>);
+        if dim.value() == 0 {
+            return Hessenberg { hess, subdiag };
+        }
 
         for ite in 0..dim.value() - 1 {
-            subdiag[ite] = MaybeUninit::new(householder::clear_column_unchecked(
-                &mut hess,
-                ite,
-                1,
-                Some(work),
-            ));
+            householder::clear_column_unchecked(&mut hess, &mut subdiag[ite], ite, 1, Some(work));
         }
 
-        // Safety: subdiag is now fully initialized.
-        let subdiag = unsafe { subdiag.assume_init() };
         Hessenberg { hess, subdiag }
     }
 
@@ -114,11 +107,7 @@ where
         self.hess.fill_lower_triangle(T::zero(), 2);
         self.hess
             .slice_mut((1, 0), (dim - 1, dim - 1))
-            .set_partial_diagonal(
-                self.subdiag
-                    .iter()
-                    .map(|e| T::from_real(e.clone().modulus())),
-            );
+            .set_partial_diagonal(self.subdiag.iter().map(|e| T::from_real(e.modulus())));
         self.hess
     }
 
@@ -127,22 +116,16 @@ where
     ///
     /// This is less efficient than `.unpack_h()` as it allocates a new matrix.
     #[inline]
-    #[must_use]
     pub fn h(&self) -> OMatrix<T, D, D> {
         let dim = self.hess.nrows();
         let mut res = self.hess.clone();
         res.fill_lower_triangle(T::zero(), 2);
         res.slice_mut((1, 0), (dim - 1, dim - 1))
-            .set_partial_diagonal(
-                self.subdiag
-                    .iter()
-                    .map(|e| T::from_real(e.clone().modulus())),
-            );
+            .set_partial_diagonal(self.subdiag.iter().map(|e| T::from_real(e.modulus())));
         res
     }
 
     /// Computes the orthogonal matrix `Q` of this decomposition.
-    #[must_use]
     pub fn q(&self) -> OMatrix<T, D, D> {
         householder::assemble_q(&self.hess, self.subdiag.as_slice())
     }

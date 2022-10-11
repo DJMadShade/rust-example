@@ -1,6 +1,6 @@
 /*
     Nyx, blazing fast astrodynamics
-    Copyright (C) 2022 Christopher Rabotin <christopher.rabotin@gmail.com>
+    Copyright (C) 2021 Christopher Rabotin <christopher.rabotin@gmail.com>
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -16,47 +16,26 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-use nalgebra::Vector3;
-
 use super::{Orbit, State};
 use crate::dynamics::guidance::Thruster;
 use crate::errors::NyxError;
-use crate::linalg::{Const, DimName, Matrix6, OMatrix, OVector, Vector6};
-use crate::mc::MultivariateNormal;
-use crate::md::StateParameter;
+use crate::linalg::{Const, DimName, Matrix6, OMatrix, OVector};
 use crate::time::Epoch;
 use crate::utils::rss_orbit_errors;
 use std::default::Default;
 use std::fmt;
 use std::ops::Add;
 
-/// Defines a spacecraft extension.
-/// This is useful for highly specialized guidance laws that need to store additional data in the spacecraft state.
-/// Most guidance laws can be implemented directly with the `Spacecraft` structure.
-pub trait SpacecraftExt: Clone + Copy + Default + fmt::Debug + Send + Sync {}
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum GuidanceMode {
-    /// Guidance is turned off and Guidance Law may switch mode to Thrust for next call
     Coast,
-    /// Guidance is turned on and Guidance Law may switch mode to Coast for next call
     Thrust,
-    /// Guidance is turned off and Guidance Law may not change its mode (will need to be done externally to the guidance law).
-    Inhibit,
     Custom(u8),
 }
 
-impl Default for GuidanceMode {
-    fn default() -> Self {
-        Self::Coast
-    }
-}
-
-impl SpacecraftExt for GuidanceMode {}
-
 /// A spacecraft state
 #[derive(Clone, Copy, Debug)]
-pub struct BaseSpacecraft<X: SpacecraftExt> {
+pub struct Spacecraft {
     /// Initial orbit the vehicle is in
     pub orbit: Orbit,
     /// Dry mass, i.e. mass without fuel, in kg
@@ -72,16 +51,13 @@ pub struct BaseSpacecraft<X: SpacecraftExt> {
     /// coefficient of drag; (spheres are between 2.0 and 2.1, use 2.2 in Earth's atmosphere).
     pub cd: f64,
     pub thruster: Option<Thruster>,
+    /// Guidance mode determines whether the thruster should fire or not
+    pub mode: GuidanceMode,
     /// Optionally stores the state transition matrix from the start of the propagation until the current time (i.e. trajectory STM, not step-size STM)
     pub stm: Option<OMatrix<f64, Const<9>, Const<9>>>,
-    /// Any extra information or extension that is needed for specific guidance laws
-    pub ext: X,
 }
 
-/// A spacecraft state
-pub type Spacecraft = BaseSpacecraft<GuidanceMode>;
-
-impl<X: SpacecraftExt> Default for BaseSpacecraft<X> {
+impl Default for Spacecraft {
     fn default() -> Self {
         Self {
             orbit: Orbit::zeros(),
@@ -92,13 +68,13 @@ impl<X: SpacecraftExt> Default for BaseSpacecraft<X> {
             cr: 1.8,
             cd: 2.2,
             thruster: None,
+            mode: GuidanceMode::Coast,
             stm: None,
-            ext: X::default(),
         }
     }
 }
 
-impl<X: SpacecraftExt> BaseSpacecraft<X> {
+impl Spacecraft {
     /// Initialize a spacecraft state from all of its parameters
     pub fn new(
         orbit: Orbit,
@@ -117,27 +93,6 @@ impl<X: SpacecraftExt> BaseSpacecraft<X> {
             drag_area_m2,
             cr,
             cd,
-            stm: orbit
-                .stm
-                .map(|_| OMatrix::<f64, Const<9>, Const<9>>::identity()),
-            ..Default::default()
-        }
-    }
-
-    /// Initialize a spacecraft state from only a thruster and mass. Use this when designing guidance laws whilke ignoring drag and SRP.
-    pub fn from_thruster(
-        orbit: Orbit,
-        dry_mass_kg: f64,
-        fuel_mass_kg: f64,
-        thruster: Thruster,
-        ext: X,
-    ) -> Self {
-        Self {
-            orbit,
-            dry_mass_kg,
-            fuel_mass_kg,
-            thruster: Some(thruster),
-            ext,
             stm: orbit
                 .stm
                 .map(|_| OMatrix::<f64, Const<9>, Const<9>>::identity()),
@@ -171,10 +126,25 @@ impl<X: SpacecraftExt> BaseSpacecraft<X> {
         }
     }
 
-    pub fn with_dv(self, dv: Vector3<f64>) -> Self {
-        let mut me = self;
-        me.orbit.apply_dv(dv);
-        me
+    /// Initialize a spacecraft state from only a thruster and mass. Use this when designing control laws whilke ignoring drag and SRP.
+    pub fn from_thruster(
+        orbit: Orbit,
+        dry_mass_kg: f64,
+        fuel_mass_kg: f64,
+        thruster: Thruster,
+        init_mode: GuidanceMode,
+    ) -> Self {
+        Self {
+            orbit,
+            dry_mass_kg,
+            fuel_mass_kg,
+            thruster: Some(thruster),
+            mode: init_mode,
+            stm: orbit
+                .stm
+                .map(|_| OMatrix::<f64, Const<9>, Const<9>>::identity()),
+            ..Default::default()
+        }
     }
 
     /// Returns a copy of the state with a new dry mass
@@ -245,6 +215,13 @@ impl<X: SpacecraftExt> BaseSpacecraft<X> {
         me
     }
 
+    /// Returns a copy of the state with the provided guidance mode
+    pub fn with_guidance_mode(self, mode: GuidanceMode) -> Self {
+        let mut me = self;
+        me.mode = mode;
+        me
+    }
+
     /// Returns the root sum square error between this spacecraft and the other, in kilometers for the position, kilometers per second in velocity, and kilograms in fuel
     pub fn rss(&self, other: &Self) -> (f64, f64, f64) {
         let (p, v) = rss_orbit_errors(&self.orbit, &other.orbit);
@@ -272,27 +249,10 @@ impl<X: SpacecraftExt> BaseSpacecraft<X> {
     pub fn mass_kg(&self) -> f64 {
         self.dry_mass_kg + self.fuel_mass_kg
     }
-
-    /// Allows the automatic conversion of a BaseSpacecraft into a standard spacecraft.
-    /// WARNING: This will IGNORE the `extra` of BaseSpacecraft
-    pub fn degrade_to_spacecraft(&self) -> Spacecraft {
-        Spacecraft {
-            orbit: self.orbit,
-            dry_mass_kg: self.dry_mass_kg,
-            fuel_mass_kg: self.fuel_mass_kg,
-            srp_area_m2: self.srp_area_m2,
-            drag_area_m2: self.drag_area_m2,
-            cr: self.cr,
-            cd: self.cd,
-            thruster: self.thruster,
-            stm: self.stm,
-            ext: GuidanceMode::Coast,
-        }
-    }
 }
 
-impl<X: SpacecraftExt> PartialEq for BaseSpacecraft<X> {
-    fn eq(&self, other: &Self) -> bool {
+impl PartialEq for Spacecraft {
+    fn eq(&self, other: &Spacecraft) -> bool {
         let mass_tol = 1e-6; // milligram
         self.orbit == other.orbit
             && (self.dry_mass_kg - other.dry_mass_kg).abs() < mass_tol
@@ -302,77 +262,67 @@ impl<X: SpacecraftExt> PartialEq for BaseSpacecraft<X> {
     }
 }
 
-impl<X: SpacecraftExt> fmt::Display for BaseSpacecraft<X> {
+impl fmt::Display for Spacecraft {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mass_prec = f.precision().unwrap_or(3);
-        let orbit_prec = f.precision().unwrap_or(6);
+        let decimals = f.precision().unwrap_or(6);
         write!(
             f,
-            "total mass = {} kg @  {}  {:?}",
-            format!("{:.*}", mass_prec, self.dry_mass_kg + self.fuel_mass_kg),
-            format!("{:.*}", orbit_prec, self.orbit),
-            self.ext,
+            "total mass = {}kg  @  {}",
+            format!("{:.*}", decimals, self.dry_mass_kg + self.fuel_mass_kg),
+            format!("{:.*}", decimals, self.orbit),
         )
     }
 }
 
-impl<X: SpacecraftExt> fmt::LowerExp for BaseSpacecraft<X> {
+impl fmt::LowerExp for Spacecraft {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mass_prec = f.precision().unwrap_or(3);
-        let orbit_prec = f.precision().unwrap_or(6);
+        let decimals = f.precision().unwrap_or(6);
         write!(
             f,
-            "total mass = {} kg @  {}  {:?}",
-            format!("{:.*e}", mass_prec, self.dry_mass_kg + self.fuel_mass_kg),
-            format!("{:.*e}", orbit_prec, self.orbit),
-            self.ext,
+            "total mass = {}kg  @  {}",
+            format!("{:.*e}", decimals, self.dry_mass_kg + self.fuel_mass_kg),
+            format!("{:.*e}", decimals, self.orbit),
         )
     }
 }
 
-impl<X: SpacecraftExt> fmt::UpperExp for BaseSpacecraft<X> {
+impl fmt::UpperExp for Spacecraft {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mass_prec = f.precision().unwrap_or(3);
-        let orbit_prec = f.precision().unwrap_or(6);
+        let decimals = f.precision().unwrap_or(6);
         write!(
             f,
-            "total mass = {} kg @  {}  {:?}",
-            format!("{:.*E}", mass_prec, self.dry_mass_kg + self.fuel_mass_kg),
-            format!("{:.*E}", orbit_prec, self.orbit),
-            self.ext,
+            "total mass = {}kg  @  {}",
+            format!("{:.*E}", decimals, self.dry_mass_kg + self.fuel_mass_kg),
+            format!("{:.*E}", decimals, self.orbit),
         )
     }
 }
 
-impl<X: SpacecraftExt> fmt::LowerHex for BaseSpacecraft<X> {
+impl fmt::LowerHex for Spacecraft {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mass_prec = f.precision().unwrap_or(3);
-        let orbit_prec = f.precision().unwrap_or(6);
+        let decimals = f.precision().unwrap_or(6);
         write!(
             f,
-            "total mass = {} kg @  {}  {:?}",
-            format!("{:.*}", mass_prec, self.dry_mass_kg + self.fuel_mass_kg),
-            format!("{:.*x}", orbit_prec, self.orbit),
-            self.ext,
+            "total mass = {}kg  @  {}",
+            format!("{:.*}", decimals, self.dry_mass_kg + self.fuel_mass_kg),
+            format!("{:.*x}", decimals, self.orbit),
         )
     }
 }
 
-impl<X: SpacecraftExt> fmt::UpperHex for BaseSpacecraft<X> {
+impl fmt::UpperHex for Spacecraft {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mass_prec = f.precision().unwrap_or(3);
-        let orbit_prec = f.precision().unwrap_or(6);
+        let decimals = f.precision().unwrap_or(6);
         write!(
             f,
-            "total mass = {} kg @  {}  {:?}",
-            format!("{:.*e}", mass_prec, self.dry_mass_kg + self.fuel_mass_kg),
-            format!("{:.*X}", orbit_prec, self.orbit),
-            self.ext,
+            "total mass = {}kg  @  {}",
+            format!("{:.*e}", decimals, self.dry_mass_kg + self.fuel_mass_kg),
+            format!("{:.*X}", decimals, self.orbit),
         )
     }
 }
 
-impl<X: SpacecraftExt> State for BaseSpacecraft<X> {
+impl State for Spacecraft {
     type Size = Const<9>;
     type VecLength = Const<90>;
 
@@ -468,44 +418,9 @@ impl<X: SpacecraftExt> State for BaseSpacecraft<X> {
     fn add(self, other: OVector<f64, Self::Size>) -> Self {
         self + other
     }
-
-    fn value(&self, param: &StateParameter) -> Result<f64, NyxError> {
-        match *param {
-            StateParameter::Cd => Ok(self.cd),
-            StateParameter::Cr => Ok(self.cr),
-            StateParameter::FuelMass => Ok(self.fuel_mass_kg),
-            StateParameter::Isp => match self.thruster {
-                Some(thruster) => Ok(thruster.isp_s),
-                None => Err(NyxError::NoThrusterAvail),
-            },
-            StateParameter::Thrust => match self.thruster {
-                Some(thruster) => Ok(thruster.thrust_N),
-                None => Err(NyxError::NoThrusterAvail),
-            },
-            _ => self.orbit.value(param),
-        }
-    }
-
-    fn set_value(&mut self, param: &StateParameter, val: f64) -> Result<(), NyxError> {
-        match *param {
-            StateParameter::Cd => self.cd = val,
-            StateParameter::Cr => self.cr = val,
-            StateParameter::FuelMass => self.fuel_mass_kg = val,
-            StateParameter::Isp => match self.thruster {
-                Some(ref mut thruster) => thruster.isp_s = val,
-                None => return Err(NyxError::NoThrusterAvail),
-            },
-            StateParameter::Thrust => match self.thruster {
-                Some(ref mut thruster) => thruster.thrust_N = val,
-                None => return Err(NyxError::NoThrusterAvail),
-            },
-            _ => return self.orbit.set_value(param, val),
-        }
-        Ok(())
-    }
 }
 
-impl<X: SpacecraftExt> Add<OVector<f64, Const<6>>> for BaseSpacecraft<X> {
+impl Add<OVector<f64, Const<6>>> for Spacecraft {
     type Output = Self;
 
     /// Adds the provided state deviation to this orbit
@@ -522,7 +437,7 @@ impl<X: SpacecraftExt> Add<OVector<f64, Const<6>>> for BaseSpacecraft<X> {
     }
 }
 
-impl<X: SpacecraftExt> Add<OVector<f64, Const<9>>> for BaseSpacecraft<X> {
+impl Add<OVector<f64, Const<9>>> for Spacecraft {
     type Output = Self;
 
     /// Adds the provided state deviation to this orbit
@@ -539,22 +454,5 @@ impl<X: SpacecraftExt> Add<OVector<f64, Const<9>>> for BaseSpacecraft<X> {
         me.fuel_mass_kg += other[8];
 
         me
-    }
-}
-
-impl Spacecraft {
-    /// Returns a copy of the state with the provided guidance mode
-    pub fn with_guidance_mode(self, mode: GuidanceMode) -> Self {
-        let mut me = self;
-        me.ext = mode;
-        me
-    }
-
-    pub fn mode(&self) -> GuidanceMode {
-        self.ext
-    }
-
-    pub fn mut_mode(&mut self, mode: GuidanceMode) {
-        self.ext = mode;
     }
 }

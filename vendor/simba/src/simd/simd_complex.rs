@@ -15,7 +15,7 @@ pub trait SimdComplexField:
     SubsetOf<Self>
     + SupersetOf<f64>
     + Field
-    + Clone
+    + Copy
     + Neg<Output = Self>
 //    + MeetSemilattice
 //    + JoinSemilattice

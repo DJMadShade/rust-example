@@ -1,6 +1,6 @@
 /*
     Nyx, blazing fast astrodynamics
-    Copyright (C) 2022 Christopher Rabotin <christopher.rabotin@gmail.com>
+    Copyright (C) 2021 Christopher Rabotin <christopher.rabotin@gmail.com>
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -112,10 +112,7 @@ where
             <<Const<{ DEGREE }> as DimMin<Const<{ VALS }>>>::Output as DimSub<Const<1>>>::Output,
         > + Allocator<f64, <Const<{ DEGREE }> as DimMin<Const<{ VALS }>>>::Output, Const<{ VALS }>>
         + Allocator<f64, <Const<{ DEGREE }> as DimMin<Const<{ VALS }>>>::Output>
-        + Allocator<f64, Const<{ DEGREE }>, <Const<{ DEGREE }> as DimMin<Const<{ VALS }>>>::Output>
-        + Allocator<(f64, usize), <Const<{ VALS }> as DimMin<Const<{ DEGREE }>>>::Output>
-        + Allocator<(usize, usize), <Const<{ VALS }> as DimMin<Const<{ DEGREE }>>>::Output>,
-
+        + Allocator<f64, Const<{ DEGREE }>, <Const<{ DEGREE }> as DimMin<Const<{ VALS }>>>::Output>,
     Const<{ VALS }>: DimMin<Const<{ DEGREE }>>,
     Const<{ DEGREE }>: DimMin<Const<{ VALS }>>,
     DimMinimum<Const<{ VALS }>, Const<{ DEGREE }>>: DimSub<Const<1>>,

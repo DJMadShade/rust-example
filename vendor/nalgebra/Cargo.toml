@@ -3,46 +3,30 @@
 # When uploading crates to the registry Cargo will automatically
 # "normalize" Cargo.toml files for maximal compatibility
 # with all versions of Cargo and also rewrite `path` dependencies
-# to registry (e.g., crates.io) dependencies.
+# to registry (e.g., crates.io) dependencies
 #
-# If you are reading this file be aware that the original Cargo.toml
-# will likely look very different (and much more reasonable).
-# See Cargo.toml.orig for the original contents.
+# If you believe there's an error in this file please file an
+# issue against the rust-lang/cargo repository. If you're
+# editing this file be aware that the upstream Cargo.toml
+# will likely look very different (and much more reasonable)
 
 [package]
 edition = "2018"
 name = "nalgebra"
-version = "0.31.2"
+version = "0.27.1"
 authors = ["Sébastien Crozet <developer@crozet.re>"]
-exclude = [
-    "/ci/*",
-    "/.travis.yml",
-    "/Makefile",
-]
+exclude = ["/ci/*", "/.travis.yml", "/Makefile"]
 description = "General-purpose linear algebra library with transformations and statically-sized or dynamically-sized matrices."
 homepage = "https://nalgebra.org"
 documentation = "https://www.nalgebra.org/docs"
 readme = "README.md"
-keywords = [
-    "linear",
-    "algebra",
-    "matrix",
-    "vector",
-    "math",
-]
-categories = [
-    "science",
-    "mathematics",
-    "wasm",
-    "no-std",
-]
+keywords = ["linear", "algebra", "matrix", "vector", "math"]
+categories = ["science", "mathematics", "wasm", "no-std"]
 license = "BSD-3-Clause"
 repository = "https://github.com/dimforge/nalgebra"
 resolver = "2"
-
 [package.metadata.docs.rs]
-all-features = true
-
+features = ["proptest-support", "compare", "macros"]
 [profile.bench]
 lto = true
 
@@ -59,6 +43,9 @@ name = "nalgebra_bench"
 path = "benches/lib.rs"
 harness = false
 required-features = ["rand"]
+[dependencies.abomonation]
+version = "0.7"
+optional = true
 
 [dependencies.alga]
 version = "0.9"
@@ -69,17 +56,14 @@ default-features = false
 version = "0.5"
 default-features = false
 
-[dependencies.bytecheck]
-version = "~0.6.1"
-optional = true
-
 [dependencies.bytemuck]
 version = "1.5"
 optional = true
 
-[dependencies.cust_core]
-version = "0.1"
+[dependencies.glam013]
+version = "0.13"
 optional = true
+package = "glam"
 
 [dependencies.glam014]
 version = "0.14"
@@ -88,36 +72,6 @@ package = "glam"
 
 [dependencies.glam015]
 version = "0.15"
-optional = true
-package = "glam"
-
-[dependencies.glam016]
-version = "0.16"
-optional = true
-package = "glam"
-
-[dependencies.glam017]
-version = "0.17"
-optional = true
-package = "glam"
-
-[dependencies.glam018]
-version = "0.18"
-optional = true
-package = "glam"
-
-[dependencies.glam019]
-version = "0.19"
-optional = true
-package = "glam"
-
-[dependencies.glam020]
-version = "0.20"
-optional = true
-package = "glam"
-
-[dependencies.glam021]
-version = "0.21"
 optional = true
 package = "glam"
 
@@ -179,8 +133,10 @@ optional = true
 default-features = false
 
 [dependencies.rkyv]
-version = "~0.7.1"
+version = "~0.6.4"
+features = ["const_generics"]
 optional = true
+default-features = false
 
 [dependencies.serde]
 version = "1.0"
@@ -189,12 +145,11 @@ optional = true
 default-features = false
 
 [dependencies.simba]
-version = "0.7"
+version = "0.5"
 default-features = false
 
 [dependencies.typenum]
 version = "1.12"
-
 [dev-dependencies.criterion]
 version = "0.3"
 features = ["html_reports"]
@@ -215,66 +170,31 @@ version = "0.3"
 version = "1.0"
 
 [features]
+abomonation-serialize = ["abomonation"]
 alloc = []
 arbitrary = ["quickcheck"]
 compare = ["matrixcompare-core"]
 convert-bytemuck = ["bytemuck"]
+convert-glam013 = ["glam013"]
 convert-glam014 = ["glam014"]
 convert-glam015 = ["glam015"]
-convert-glam016 = ["glam016"]
-convert-glam017 = ["glam017"]
-convert-glam018 = ["glam018"]
-convert-glam019 = ["glam019"]
-convert-glam020 = ["glam020"]
-convert-glam021 = ["glam021"]
 convert-mint = ["mint"]
-cuda = [
-    "cust_core",
-    "simba/cuda",
-]
-debug = [
-    "approx/num-complex",
-    "rand",
-]
-default = [
-    "std",
-    "macros",
-]
-io = [
-    "pest",
-    "pest_derive",
-]
+debug = ["approx/num-complex", "rand"]
+default = ["std", "macros"]
+io = ["pest", "pest_derive"]
 libm = ["simba/libm"]
 libm-force = ["simba/libm_force"]
 macros = ["nalgebra-macros"]
+no_unsound_assume_init = []
 proptest-support = ["proptest"]
-rand = [
-    "rand-no-std",
-    "rand-package/std",
-    "rand-package/std_rng",
-    "rand_distr",
-]
+rand = ["rand-no-std", "rand-package/std", "rand-package/std_rng", "rand_distr"]
 rand-no-std = ["rand-package"]
-rkyv-serialize = [
-    "rkyv-serialize-no-std",
-    "rkyv/std",
-    "bytecheck",
-]
+rkyv-serialize = ["rkyv-serialize-no-std", "rkyv/std"]
 rkyv-serialize-no-std = ["rkyv"]
-serde-serialize = [
-    "serde-serialize-no-std",
-    "serde/std",
-]
-serde-serialize-no-std = [
-    "serde",
-    "num-complex/serde",
-]
+serde-serialize = ["serde-serialize-no-std", "serde/std"]
+serde-serialize-no-std = ["serde", "num-complex/serde"]
 slow-tests = []
 sparse = []
-std = [
-    "matrixmultiply",
-    "simba/std",
-]
-
+std = ["matrixmultiply", "simba/std"]
 [badges.maintenance]
 status = "actively-developed"

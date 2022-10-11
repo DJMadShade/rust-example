@@ -1,6 +1,6 @@
 /*
     Nyx, blazing fast astrodynamics
-    Copyright (C) 2022 Christopher Rabotin <christopher.rabotin@gmail.com>
+    Copyright (C) 2021 Christopher Rabotin <christopher.rabotin@gmail.com>
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -23,8 +23,11 @@ use self::na::Complex;
 use self::num::traits::real::Real;
 use crate::cosmic::Orbit;
 use crate::linalg::{
-    allocator::Allocator, DefaultAllocator, DimName, Matrix3, Matrix6, OVector, Vector3, Vector6,
+    allocator::Allocator, DMatrix, DefaultAllocator, DimName, Matrix3, Matrix6, OVector, Vector3,
+    Vector6,
 };
+use crate::NyxError;
+use std::f64;
 
 /// Returns the tilde matrix from the provided Vector3.
 pub fn tilde_matrix(v: &Vector3<f64>) -> Matrix3<f64> {
@@ -260,23 +263,29 @@ pub(crate) fn dcm_assemble(r: Matrix3<f64>, drdt: Matrix3<f64>) -> Matrix6<f64> 
     full_dcm
 }
 
-#[macro_export]
-macro_rules! pseudo_inverse {
-    ($mat:expr) => {{
-        use crate::NyxError;
-        let (rows, cols) = $mat.shape();
-        if rows < cols {
-            match ($mat * $mat.transpose()).try_inverse() {
-                Some(m1_inv) => Ok($mat.transpose() * m1_inv),
-                None => Err(NyxError::SingularJacobian),
-            }
-        } else {
-            match ($mat.transpose() * $mat).try_inverse() {
-                Some(m2_inv) => Ok(m2_inv * $mat.transpose()),
-                None => Err(NyxError::SingularJacobian),
-            }
+/// Compute the Moore Penrose pseudo-inverse if needed, else the real inverse
+/// Warning: if this is a square matrix, it will be cloned prior to being inversed
+#[allow(clippy::comparison_chain)]
+pub(crate) fn pseudo_inverse(mat: &DMatrix<f64>, err: NyxError) -> Result<DMatrix<f64>, NyxError> {
+    let (rows, cols) = mat.shape();
+    if cols == rows {
+        match mat.clone().try_inverse() {
+            Some(inv) => Ok(inv),
+            None => Err(err),
         }
-    }};
+    } else if rows < cols {
+        let m1_inv = match (mat * mat.transpose()).try_inverse() {
+            Some(inv) => inv,
+            None => return Err(err),
+        };
+        Ok(mat.transpose() * m1_inv)
+    } else {
+        let m2_inv = match (mat.transpose() * mat).try_inverse() {
+            Some(inv) => inv,
+            None => return Err(err),
+        };
+        Ok(m2_inv * mat.transpose())
+    }
 }
 
 /// Returns the order of mangitude of the provided value
@@ -284,46 +293,9 @@ macro_rules! pseudo_inverse {
 /// use nyx_space::utils::mag_order;
 /// assert_eq!(mag_order(1000.0), 3);
 /// assert_eq!(mag_order(-5000.0), 3);
-/// assert_eq!(mag_order(-0.0005), -4);
 /// ```
 pub fn mag_order(value: f64) -> i32 {
     value.abs().log10().floor() as i32
-}
-
-/// Returns the unit vector of the moved input vector
-pub fn unitize(v: Vector3<f64>) -> Vector3<f64> {
-    if v.norm() < f64::EPSILON {
-        v
-    } else {
-        v / v.norm()
-    }
-}
-
-/// Converts the input vector V from Cartesian coordinates to spherical coordinates
-/// Returns ρ, θ, φ where the range ρ is in the units of the input vector and the angles are in radians
-pub fn cartesian_to_spherical(v: &Vector3<f64>) -> (f64, f64, f64) {
-    if v.norm() < f64::EPSILON {
-        (0.0, 0.0, 0.0)
-    } else {
-        let range_ρ = v.norm();
-        let θ = v.y.atan2(v.x);
-        let φ = (v.z / range_ρ).acos();
-        (range_ρ, θ, φ)
-    }
-}
-
-/// Converts the input vector V from Cartesian coordinates to spherical coordinates
-/// Returns ρ, θ, φ where the range ρ is in the units of the input vector and the angles are in radians
-pub fn spherical_to_cartesian(range_ρ: f64, θ: f64, φ: f64) -> Vector3<f64> {
-    if range_ρ < f64::EPSILON {
-        // Treat a negative range as a zero vector
-        Vector3::zeros()
-    } else {
-        let x = range_ρ * φ.sin() * θ.cos();
-        let y = range_ρ * φ.sin() * θ.sin();
-        let z = range_ρ * φ.cos();
-        Vector3::new(x, y, z)
-    }
 }
 
 #[test]
@@ -398,53 +370,19 @@ fn test_projv() {
 
 #[test]
 fn test_angle_bounds() {
-    assert!((between_pm_180(181.0) - -179.0).abs() < f64::EPSILON);
-    assert!((between_0_360(-179.0) - 181.0).abs() < f64::EPSILON);
+    assert!((between_pm_180(181.0) - -179.0).abs() < std::f64::EPSILON);
+    assert!((between_0_360(-179.0) - 181.0).abs() < std::f64::EPSILON);
 }
 
 #[test]
 fn test_pseudo_inv() {
-    use crate::linalg::{DMatrix, SMatrix};
     let mut mat = DMatrix::from_element(1, 3, 0.0);
     mat[(0, 0)] = -1407.273208782421;
     mat[(0, 1)] = -2146.3100013104886;
     mat[(0, 2)] = 84.05022886527551;
 
-    println!("{}", pseudo_inverse!(&mat).unwrap());
-
-    let mut mat = SMatrix::<f64, 1, 3>::zeros();
-    mat[(0, 0)] = -1407.273208782421;
-    mat[(0, 1)] = -2146.3100013104886;
-    mat[(0, 2)] = 84.05022886527551;
-
-    println!("{}", pseudo_inverse!(&mat).unwrap());
-
-    let mut mat = SMatrix::<f64, 3, 1>::zeros();
-    mat[(0, 0)] = -1407.273208782421;
-    mat[(1, 0)] = -2146.3100013104886;
-    mat[(2, 0)] = 84.05022886527551;
-
-    println!("{}", pseudo_inverse!(&mat).unwrap());
-
-    // Compare a pseudo inverse with a true inverse
-    let mat = SMatrix::<f64, 2, 2>::new(3.0, 4.0, -2.0, 1.0);
-    println!("{}", mat.try_inverse().unwrap());
-
-    println!("{}", pseudo_inverse!(&mat).unwrap());
-}
-
-#[test]
-fn spherical() {
-    for v in &[
-        Vector3::<f64>::x(),
-        Vector3::<f64>::y(),
-        Vector3::<f64>::z(),
-        Vector3::<f64>::zeros(),
-        Vector3::<f64>::new(159.1, 561.2, 756.3),
-    ] {
-        let (range_ρ, θ, φ) = cartesian_to_spherical(v);
-        let v_prime = spherical_to_cartesian(range_ρ, θ, φ);
-
-        assert!(rss_errors(v, &v_prime) < 1e-12, "{} != {}", v, &v_prime);
-    }
+    println!(
+        "{}",
+        pseudo_inverse(&mat, NyxError::PartialsUndefined).unwrap()
+    );
 }

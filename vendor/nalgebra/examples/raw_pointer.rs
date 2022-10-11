@@ -19,7 +19,6 @@ fn main() {
 
     /* Then pass the raw pointers to some graphics API. */
 
-    #[allow(clippy::float_cmp)]
     unsafe {
         assert_eq!(*v_pointer, 1.0);
         assert_eq!(*v_pointer.offset(1), 0.0);

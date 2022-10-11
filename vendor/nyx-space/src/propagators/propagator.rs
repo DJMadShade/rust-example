@@ -1,6 +1,6 @@
 /*
     Nyx, blazing fast astrodynamics
-    Copyright (C) 2022 Christopher Rabotin <christopher.rabotin@gmail.com>
+    Copyright (C) 2021 Christopher Rabotin <christopher.rabotin@gmail.com>
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -19,19 +19,20 @@
 use super::error_ctrl::{ErrorCtrl, RSSCartesianStep};
 use super::rayon::iter::ParallelBridge;
 use super::rayon::prelude::ParallelIterator;
-use super::{Dormand78, IntegrationDetails, RK, RK89};
+use super::{IntegrationDetails, RK, RK89};
 use crate::dynamics::Dynamics;
 use crate::errors::NyxError;
 use crate::linalg::allocator::Allocator;
 use crate::linalg::{DefaultAllocator, OVector};
 use crate::md::trajectory::spline::INTERPOLATION_SAMPLES;
-use crate::md::trajectory::{interpolate, InterpState, Traj, TrajError};
+use crate::md::trajectory::{interpolate, InterpState, Traj};
 use crate::md::EventEvaluator;
-use crate::time::{Duration, Epoch, Unit};
+use crate::time::{Duration, Epoch, TimeUnit};
 use crate::State;
 use std::collections::BTreeMap;
 use std::f64;
 use std::sync::mpsc::{channel, Sender};
+use std::sync::Arc;
 
 /// A Propagator allows propagating a set of dynamics forward or backward in time.
 /// It is an EventTracker, without any event tracking. It includes the options, the integrator
@@ -44,7 +45,7 @@ where
         + Allocator<usize, <D::StateType as State>::Size, <D::StateType as State>::Size>
         + Allocator<f64, <D::StateType as State>::VecLength>,
 {
-    pub dynamics: D, // Stores the dynamics used. *Must* use this to get the latest values
+    pub dynamics: Arc<D>, // Stores the dynamics used. *Must* use this to get the latest values
     pub opts: PropOpts<E>, // Stores the integration options (tolerance, min/max step, init step, etc.)
     order: u8,             // Order of the integrator
     stages: usize,         // Number of stages, i.e. how many times the derivatives will be called
@@ -61,7 +62,7 @@ where
         + Allocator<f64, <D::StateType as State>::VecLength>,
 {
     /// Each propagator must be initialized with `new` which stores propagator information.
-    pub fn new<T: RK>(dynamics: D, opts: PropOpts<E>) -> Self {
+    pub fn new<T: RK>(dynamics: Arc<D>, opts: PropOpts<E>) -> Self {
         Self {
             dynamics,
             opts,
@@ -79,22 +80,15 @@ where
 
     /// Set the maximum step size for the propagator and sets the initial step to that value if currently greater
     pub fn set_max_step(&mut self, step: Duration) {
-        self.opts.set_max_step(step);
-    }
-
-    pub fn set_min_step(&mut self, step: Duration) {
-        self.opts.set_min_step(step);
+        if self.opts.init_step > step {
+            self.opts.init_step = step;
+        }
+        self.opts.max_step = step;
     }
 
     /// An RK89 propagator (the default) with custom propagator options.
-    pub fn rk89(dynamics: D, opts: PropOpts<E>) -> Self {
+    pub fn rk89(dynamics: Arc<D>, opts: PropOpts<E>) -> Self {
         Self::new::<RK89>(dynamics, opts)
-    }
-
-    /// A Dormand Prince 7-8 propagator with custom propagator options: it's about 20% faster than an RK98, and more stable in two body dynamics.
-    /// WARNINGS: Dormand Prince may have issues with generating proper trajectories, leading to glitches in event finding.
-    pub fn dp78(dynamics: D, opts: PropOpts<E>) -> Self {
-        Self::new::<Dormand78>(dynamics, opts)
     }
 
     pub fn with(&'a self, state: D::StateType) -> PropInstance<'a, D, E> {
@@ -126,15 +120,8 @@ where
         + Allocator<f64, <D::StateType as State>::VecLength>,
 {
     /// Default propagator is an RK89 with the default PropOpts.
-    pub fn default(dynamics: D) -> Self {
+    pub fn default(dynamics: Arc<D>) -> Self {
         Self::new::<RK89>(dynamics, PropOpts::default())
-    }
-
-    /// A default Dormand Prince 78 propagator with the default PropOpts.
-    /// Faster and more stable than an RK89 (`default`) but seems to cause issues for event finding.
-    /// WARNINGS: Dormand Prince may have issues with generating proper trajectories, leading to glitches in event finding.
-    pub fn default_dp78(dynamics: D) -> Self {
-        Self::new::<Dormand78>(dynamics, PropOpts::default())
     }
 }
 
@@ -180,18 +167,16 @@ where
         duration: Duration,
         maybe_tx_chan: Option<Sender<D::StateType>>,
     ) -> Result<D::StateType, NyxError> {
-        if duration == 0 * Unit::Second {
+        if duration == 0 * TimeUnit::Second {
+            debug!("No propagation necessary");
             return Ok(self.state);
         }
         let stop_time = self.state.epoch() + duration;
-        if duration > 2 * Unit::Minute || duration < -2 * Unit::Minute {
+        if duration > 2 * TimeUnit::Minute || duration < -2 * TimeUnit::Minute {
             // Prevent the print spam for orbit determination cases
             info!("Propagating for {} until {}", duration, stop_time);
         }
-        // Call `finally` on the current state to set anything up
-        self.state = self.prop.dynamics.finally(self.state)?;
-
-        let backprop = duration < Unit::Nanosecond;
+        let backprop = duration < TimeUnit::Nanosecond;
         if backprop {
             self.step_size = -self.step_size; // Invert the step size
         }
@@ -313,11 +298,9 @@ where
                         .map(|&x| x)
                         .collect::<Vec<D::StateType>>();
 
-                    tx_bucket.send(this_wdn).map_err(|_| {
-                        NyxError::from(TrajError::CreationError(
-                            "could not send onto channel".to_string(),
-                        ))
-                    })?;
+                    tx_bucket
+                        .send(this_wdn)
+                        .map_err(|_| NyxError::TrajectoryCreationError)?;
 
                     // Now, let's remove the first states
                     for _ in 0..items_per_segments - 1 {
@@ -356,11 +339,7 @@ where
                             .map(|&x| x)
                             .collect::<Vec<D::StateType>>(),
                     )
-                    .map_err(|_| {
-                        NyxError::from(TrajError::CreationError(
-                            "could not send onto channel".to_string(),
-                        ))
-                    })?;
+                    .map_err(|_| NyxError::TrajectoryCreationError)?;
                 if start_idx > 0 || window_states.len() < items_per_segments {
                     break;
                 }
@@ -384,12 +363,11 @@ where
         let mut traj = Traj {
             segments: BTreeMap::new(),
             start_state,
-            backward: false,
         };
 
         for maybe_spline in splines {
             let spline = maybe_spline?;
-            traj.append_spline(spline)?;
+            traj.append_spline(spline);
         }
 
         Ok((end_state, traj))
@@ -410,23 +388,9 @@ where
         self.for_duration_with_traj(duration)
     }
 
-    /// Propagate until a specific event is found once.
-    /// Returns the state found and the trajectory until `max_duration`
-    pub fn until_event<F: EventEvaluator<D::StateType>>(
-        &mut self,
-        max_duration: Duration,
-        event: &F,
-    ) -> Result<(D::StateType, Traj<D::StateType>), NyxError>
-    where
-        <DefaultAllocator as Allocator<f64, <D::StateType as State>::VecLength>>::Buffer: Send,
-        D::StateType: InterpState,
-    {
-        self.until_nth_event(max_duration, event, 0)
-    }
-
     /// Propagate until a specific event is found `trigger` times.
     /// Returns the state found and the trajectory until `max_duration`
-    pub fn until_nth_event<F: EventEvaluator<D::StateType>>(
+    pub fn until_event<F: EventEvaluator<D::StateType>>(
         &mut self,
         max_duration: Duration,
         event: &F,
@@ -525,7 +489,7 @@ where
                         );
                     }
 
-                    self.details.step = step_size * Unit::Second;
+                    self.details.step = step_size * TimeUnit::Second;
                     if self.details.error < self.prop.opts.tolerance {
                         // Let's increase the step size for the next iteration.
                         // Error is less than tolerance, let's attempt to increase the step for the next iteration.
@@ -540,7 +504,7 @@ where
                         };
                     }
                     // In all cases, let's update the step size to whatever was the adapted step size
-                    self.step_size = step_size * Unit::Second;
+                    self.step_size = step_size * TimeUnit::Second;
                     return Ok((self.details.step, next_state));
                 } else {
                     // Error is too high and we aren't using the smallest step, and we haven't hit the max number of attempts.
@@ -576,13 +540,13 @@ where
 /// fixed step options will lead to an RK4 being used instead of an RK45.
 #[derive(Clone, Copy, Debug)]
 pub struct PropOpts<E: ErrorCtrl> {
-    pub init_step: Duration,
-    pub min_step: Duration,
-    pub max_step: Duration,
-    pub tolerance: f64,
-    pub attempts: u8,
-    pub fixed_step: bool,
-    pub _errctrl: E,
+    init_step: Duration,
+    min_step: Duration,
+    max_step: Duration,
+    tolerance: f64,
+    attempts: u8,
+    fixed_step: bool,
+    errctrl: E,
 }
 
 impl<E: ErrorCtrl> PropOpts<E> {
@@ -601,14 +565,14 @@ impl<E: ErrorCtrl> PropOpts<E> {
             tolerance,
             attempts: 50,
             fixed_step: false,
-            _errctrl: errctrl,
+            errctrl,
         }
     }
 
     pub fn with_adaptive_step_s(min_step: f64, max_step: f64, tolerance: f64, errctrl: E) -> Self {
         Self::with_adaptive_step(
-            min_step * Unit::Second,
-            max_step * Unit::Second,
+            min_step * TimeUnit::Second,
+            max_step * TimeUnit::Second,
             tolerance,
             errctrl,
         )
@@ -620,22 +584,6 @@ impl<E: ErrorCtrl> PropOpts<E> {
             "[min_step: {:.e}, max_step: {:.e}, tol: {:.e}, attempts: {}]",
             self.min_step, self.max_step, self.tolerance, self.attempts,
         )
-    }
-
-    /// Set the maximum step size and sets the initial step to that value if currently greater
-    pub fn set_max_step(&mut self, max_step: Duration) {
-        if self.init_step > max_step {
-            self.init_step = max_step;
-        }
-        self.max_step = max_step;
-    }
-
-    /// Set the minimum step size and sets the initial step to that value if currently smaller
-    pub fn set_min_step(&mut self, min_step: Duration) {
-        if self.init_step < min_step {
-            self.init_step = min_step;
-        }
-        self.min_step = min_step;
     }
 }
 
@@ -650,12 +598,12 @@ impl PropOpts<RSSCartesianStep> {
             tolerance: 0.0,
             fixed_step: true,
             attempts: 0,
-            _errctrl: RSSCartesianStep {},
+            errctrl: RSSCartesianStep {},
         }
     }
 
     pub fn with_fixed_step_s(step: f64) -> Self {
-        Self::with_fixed_step(step * Unit::Second)
+        Self::with_fixed_step(step * TimeUnit::Second)
     }
 
     /// Returns the default options with a specific tolerance.
@@ -665,27 +613,19 @@ impl PropOpts<RSSCartesianStep> {
         opts.tolerance = tolerance;
         opts
     }
-
-    /// Creates a propagator with the provided max step, and sets the initial step to that value as well.
-    #[allow(clippy::field_reassign_with_default)]
-    pub fn with_max_step(max_step: Duration) -> Self {
-        let mut opts = Self::default();
-        opts.set_max_step(max_step);
-        opts
-    }
 }
 
 impl Default for PropOpts<RSSCartesianStep> {
     /// `default` returns the same default options as GMAT.
     fn default() -> PropOpts<RSSCartesianStep> {
         PropOpts {
-            init_step: 60.0 * Unit::Second,
-            min_step: 0.001 * Unit::Second,
-            max_step: 2700.0 * Unit::Second,
+            init_step: 60.0 * TimeUnit::Second,
+            min_step: 0.001 * TimeUnit::Second,
+            max_step: 2700.0 * TimeUnit::Second,
             tolerance: 1e-12,
             attempts: 50,
             fixed_step: false,
-            _errctrl: RSSCartesianStep {},
+            errctrl: RSSCartesianStep {},
         }
     }
 }
@@ -695,30 +635,22 @@ fn test_options() {
     use super::error_ctrl::RSSStep;
 
     let opts = PropOpts::with_fixed_step_s(1e-1);
-    assert_eq!(opts.min_step, 1e-1 * Unit::Second);
-    assert_eq!(opts.max_step, 1e-1 * Unit::Second);
-    assert!(opts.tolerance.abs() < f64::EPSILON);
+    assert_eq!(opts.min_step, 1e-1 * TimeUnit::Second);
+    assert_eq!(opts.max_step, 1e-1 * TimeUnit::Second);
+    assert!(opts.tolerance.abs() < std::f64::EPSILON);
     assert!(opts.fixed_step);
 
     let opts = PropOpts::with_adaptive_step_s(1e-2, 10.0, 1e-12, RSSStep {});
-    assert_eq!(opts.min_step, 1e-2 * Unit::Second);
-    assert_eq!(opts.max_step, 10.0 * Unit::Second);
-    assert!((opts.tolerance - 1e-12).abs() < f64::EPSILON);
+    assert_eq!(opts.min_step, 1e-2 * TimeUnit::Second);
+    assert_eq!(opts.max_step, 10.0 * TimeUnit::Second);
+    assert!((opts.tolerance - 1e-12).abs() < std::f64::EPSILON);
     assert!(!opts.fixed_step);
 
     let opts: PropOpts<RSSCartesianStep> = Default::default();
-    assert_eq!(opts.init_step, 60.0 * Unit::Second);
-    assert_eq!(opts.min_step, 0.001 * Unit::Second);
-    assert_eq!(opts.max_step, 2700.0 * Unit::Second);
-    assert!((opts.tolerance - 1e-12).abs() < f64::EPSILON);
-    assert_eq!(opts.attempts, 50);
-    assert!(!opts.fixed_step);
-
-    let opts = PropOpts::with_max_step(1.0 * Unit::Second);
-    assert_eq!(opts.init_step, 1.0 * Unit::Second);
-    assert_eq!(opts.min_step, 0.001 * Unit::Second);
-    assert_eq!(opts.max_step, 1.0 * Unit::Second);
-    assert!((opts.tolerance - 1e-12).abs() < f64::EPSILON);
+    assert_eq!(opts.init_step, 60.0 * TimeUnit::Second);
+    assert_eq!(opts.min_step, 0.001 * TimeUnit::Second);
+    assert_eq!(opts.max_step, 2700.0 * TimeUnit::Second);
+    assert!((opts.tolerance - 1e-12).abs() < std::f64::EPSILON);
     assert_eq!(opts.attempts, 50);
     assert!(!opts.fixed_step);
 }

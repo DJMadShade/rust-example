@@ -3,7 +3,7 @@ use std::mem;
 
 use crate::allocator::Allocator;
 use crate::sparse::{CsMatrix, CsStorage, CsStorageIter, CsStorageIterMut, CsVecStorage};
-use crate::{Const, DefaultAllocator, Dim, Matrix, OVector, RealField};
+use crate::{Const, DefaultAllocator, Dim, OVector, RealField};
 
 /// The cholesky decomposition of a column compressed sparse matrix.
 pub struct CsCholesky<T: RealField, D: Dim>
@@ -48,8 +48,10 @@ where
         let (l, u) = Self::nonzero_pattern(m);
 
         // Workspaces.
-        let work_x = Matrix::zeros_generic(m.data.shape().0, Const::<1>);
-        let work_c = Matrix::zeros_generic(m.data.shape().1, Const::<1>);
+        let work_x =
+            unsafe { crate::unimplemented_or_uninitialized_generic!(m.data.shape().0, Const::<1>) };
+        let work_c =
+            unsafe { crate::unimplemented_or_uninitialized_generic!(m.data.shape().1, Const::<1>) };
         let mut original_p = m.data.p.as_slice().to_vec();
         original_p.push(m.data.i.len());
 
@@ -65,7 +67,6 @@ where
     }
 
     /// The lower-triangular matrix of the cholesky decomposition.
-    #[must_use]
     pub fn l(&self) -> Option<&CsMatrix<T, D, D>> {
         if self.ok {
             Some(&self.l)
@@ -107,29 +108,28 @@ where
                     let irow = *self.original_i.get_unchecked(p);
 
                     if irow >= k {
-                        *self.work_x.vget_unchecked_mut(irow) = values.get_unchecked(p).clone();
+                        *self.work_x.vget_unchecked_mut(irow) = *values.get_unchecked(p);
                     }
                 }
 
                 for j in self.u.data.column_row_indices(k) {
-                    let factor = -self
+                    let factor = -*self
                         .l
                         .data
                         .vals
-                        .get_unchecked(*self.work_c.vget_unchecked(j))
-                        .clone();
+                        .get_unchecked(*self.work_c.vget_unchecked(j));
                     *self.work_c.vget_unchecked_mut(j) += 1;
 
                     if j < k {
                         for (z, val) in self.l.data.column_entries(j) {
                             if z >= k {
-                                *self.work_x.vget_unchecked_mut(z) += val * factor.clone();
+                                *self.work_x.vget_unchecked_mut(z) += val * factor;
                             }
                         }
                     }
                 }
 
-                let diag = self.work_x.vget_unchecked(k).clone();
+                let diag = *self.work_x.vget_unchecked(k);
 
                 if diag > T::zero() {
                     let denom = diag.sqrt();
@@ -137,10 +137,10 @@ where
                         .l
                         .data
                         .vals
-                        .get_unchecked_mut(*self.l.data.p.vget_unchecked(k)) = denom.clone();
+                        .get_unchecked_mut(*self.l.data.p.vget_unchecked(k)) = denom;
 
                     for (p, val) in self.l.data.column_entries_mut(k) {
-                        *val = self.work_x.vget_unchecked(p).clone() / denom.clone();
+                        *val = *self.work_x.vget_unchecked(p) / denom;
                         *self.work_x.vget_unchecked_mut(p) = T::zero();
                     }
                 } else {
@@ -177,11 +177,11 @@ where
                     let irow = *self.original_i.get_unchecked(p);
 
                     if irow <= k {
-                        *self.work_x.vget_unchecked_mut(irow) = values.get_unchecked(p).clone();
+                        *self.work_x.vget_unchecked_mut(irow) = *values.get_unchecked(p);
                     }
                 }
 
-                let mut diag = self.work_x.vget_unchecked(k).clone();
+                let mut diag = *self.work_x.vget_unchecked(k);
                 *self.work_x.vget_unchecked_mut(k) = T::zero();
 
                 // Triangular solve.
@@ -190,13 +190,12 @@ where
                         continue;
                     }
 
-                    let lki = self.work_x.vget_unchecked(irow).clone()
-                        / self
+                    let lki = *self.work_x.vget_unchecked(irow)
+                        / *self
                             .l
                             .data
                             .vals
-                            .get_unchecked(*self.l.data.p.vget_unchecked(irow))
-                            .clone();
+                            .get_unchecked(*self.l.data.p.vget_unchecked(irow));
                     *self.work_x.vget_unchecked_mut(irow) = T::zero();
 
                     for p in
@@ -205,10 +204,10 @@ where
                         *self
                             .work_x
                             .vget_unchecked_mut(*self.l.data.i.get_unchecked(p)) -=
-                            self.l.data.vals.get_unchecked(p).clone() * lki.clone();
+                            *self.l.data.vals.get_unchecked(p) * lki;
                     }
 
-                    diag -= lki.clone() * lki.clone();
+                    diag -= lki * lki;
                     let p = *self.work_c.vget_unchecked(irow);
                     *self.work_c.vget_unchecked_mut(irow) += 1;
                     *self.l.data.i.get_unchecked_mut(p) = k;
@@ -294,7 +293,8 @@ where
         let etree = Self::elimination_tree(m);
         let (nrows, ncols) = m.data.shape();
         let mut rows = Vec::with_capacity(m.len());
-        let mut cols = Matrix::zeros_generic(m.data.shape().0, Const::<1>);
+        let mut cols =
+            unsafe { crate::unimplemented_or_uninitialized_generic!(m.data.shape().0, Const::<1>) };
         let mut marks = Vec::new();
 
         // NOTE: the following will actually compute the non-zero pattern of

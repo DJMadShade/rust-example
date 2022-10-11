@@ -1,6 +1,3 @@
-// The macros break if the references are taken out, for some reason.
-#![allow(clippy::op_ref)]
-
 use num::{One, Zero};
 use std::ops::{Div, DivAssign, Mul, MulAssign};
 
@@ -241,7 +238,7 @@ md_assign_impl_all!(
     const; for; where;
     self: Similarity<T, UnitQuaternion<T>, 3>, rhs: UnitQuaternion<T>;
     [val] => self.isometry.rotation *= rhs;
-    [ref] => self.isometry.rotation *= rhs.clone();
+    [ref] => self.isometry.rotation *= *rhs;
 );
 
 md_assign_impl_all!(
@@ -260,7 +257,7 @@ md_assign_impl_all!(
     const; for; where;
     self: Similarity<T, UnitComplex<T>, 2>, rhs: UnitComplex<T>;
     [val] => self.isometry.rotation *= rhs;
-    [ref] => self.isometry.rotation *= rhs.clone();
+    [ref] => self.isometry.rotation *= *rhs;
 );
 
 md_assign_impl_all!(

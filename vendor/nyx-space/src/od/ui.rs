@@ -1,6 +1,6 @@
 /*
     Nyx, blazing fast astrodynamics
-    Copyright (C) 2022 Christopher Rabotin <christopher.rabotin@gmail.com>
+    Copyright (C) 2021 Christopher Rabotin <christopher.rabotin@gmail.com>
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -29,7 +29,7 @@ pub use super::*;
 
 use crate::propagators::error_ctrl::ErrorCtrl;
 use crate::propagators::PropInstance;
-pub use crate::time::{Duration, Unit};
+pub use crate::time::{Duration, TimeUnit};
 use crate::State;
 
 use std::convert::TryFrom;
@@ -331,11 +331,8 @@ where
         let mut sum = 0.0;
         for residual in &self.residuals {
             // sum += residual.prefit.dot(&residual.prefit);
-            let mut msr_noise_item_inv: OVector<f64, Msr::MeasurementSize> =
-                self.kf.measurement_noise(residual.dt).diagonal().clone();
-            for i in 0..msr_noise_item_inv.len() {
-                msr_noise_item_inv[i] = 1.0 / msr_noise_item_inv[i];
-            }
+            let mut msr_noise_item_inv = self.kf.measurement_noise(residual.dt).diagonal().clone();
+            msr_noise_item_inv.apply(|m| 1.0 / m);
             sum += residual.prefit.dot(&msr_noise_item_inv).powi(2);
         }
         (sum / (self.estimates.len() as f64)).sqrt()

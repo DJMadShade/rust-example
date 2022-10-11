@@ -782,12 +782,12 @@ macro_rules! impl_fixed_type(
                     + IsLessOrEqual<$LeEqDim3, Output = True>
                     + IsLessOrEqual<$LeEqDim4, Output = True> {
             #[inline]
-            fn is_sign_positive(&self) -> bool {
+            fn is_sign_positive(self) -> bool {
                 self.0.is_positive()
             }
 
             #[inline]
-            fn is_sign_negative(&self) -> bool {
+            fn is_sign_negative(self) -> bool {
                 self.0.is_negative()
             }
 
@@ -832,16 +832,6 @@ macro_rules! impl_fixed_type(
             #[inline]
             fn atan2(self, other: Self) -> Self {
                 Self(cordic::atan2(self.0, other.0))
-            }
-
-            #[inline]
-            fn min_value() -> Option<Self> {
-                Some(Bounded::min_value())
-            }
-
-            #[inline]
-            fn max_value() -> Option<Self> {
-                Some(Bounded::max_value())
             }
 
             /// Archimedes' constant.

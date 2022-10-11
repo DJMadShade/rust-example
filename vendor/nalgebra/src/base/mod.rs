@@ -33,13 +33,10 @@ mod unit;
 #[cfg(any(feature = "std", feature = "alloc"))]
 mod vec_storage;
 
-mod blas_uninit;
 #[doc(hidden)]
 pub mod helper;
 mod interpolation;
 mod min_max;
-/// Mechanisms for working with values that may not be initialized.
-pub mod uninit;
 
 pub use self::matrix::*;
 pub use self::norm::*;
@@ -53,6 +50,5 @@ pub use self::alias::*;
 pub use self::alias_slice::*;
 pub use self::array_storage::*;
 pub use self::matrix_slice::*;
-pub use self::storage::*;
 #[cfg(any(feature = "std", feature = "alloc"))]
 pub use self::vec_storage::*;

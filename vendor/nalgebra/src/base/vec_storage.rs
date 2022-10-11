@@ -1,3 +1,6 @@
+#[cfg(feature = "abomonation-serialize")]
+use std::io::{Result as IOResult, Write};
+
 #[cfg(all(feature = "alloc", not(feature = "std")))]
 use alloc::vec::Vec;
 
@@ -5,7 +8,9 @@ use crate::base::allocator::Allocator;
 use crate::base::constraint::{SameNumberOfRows, ShapeConstraint};
 use crate::base::default_allocator::DefaultAllocator;
 use crate::base::dimension::{Dim, DimName, Dynamic, U1};
-use crate::base::storage::{IsContiguous, Owned, RawStorage, RawStorageMut, ReshapableStorage};
+use crate::base::storage::{
+    ContiguousStorage, ContiguousStorageMut, Owned, ReshapableStorage, Storage, StorageMut,
+};
 use crate::base::{Scalar, Vector};
 
 #[cfg(feature = "serde-serialize-no-std")]
@@ -14,12 +19,12 @@ use serde::{
     ser::{Serialize, Serializer},
 };
 
-use crate::Storage;
-use std::mem::MaybeUninit;
+#[cfg(feature = "abomonation-serialize")]
+use abomonation::Abomonation;
 
 /*
  *
- * RawStorage.
+ * Storage.
  *
  */
 /// A Vec-based matrix data storage. It may be dynamically-sized.
@@ -74,7 +79,7 @@ where
 }
 
 #[deprecated(note = "renamed to `VecStorage`")]
-/// Renamed to [`VecStorage`].
+/// Renamed to [VecStorage].
 pub type MatrixVec<T, R, C> = VecStorage<T, R, C>;
 
 impl<T, R: Dim, C: Dim> VecStorage<T, R, C> {
@@ -90,14 +95,12 @@ impl<T, R: Dim, C: Dim> VecStorage<T, R, C> {
 
     /// The underlying data storage.
     #[inline]
-    #[must_use]
     pub fn as_vec(&self) -> &Vec<T> {
         &self.data
     }
 
     /// The underlying mutable data storage.
     ///
-    /// # Safety
     /// This is unsafe because this may cause UB if the size of the vector is changed
     /// by the user.
     #[inline]
@@ -107,82 +110,39 @@ impl<T, R: Dim, C: Dim> VecStorage<T, R, C> {
 
     /// Resizes the underlying mutable data storage and unwraps it.
     ///
-    /// # Safety
-    /// - If `sz` is larger than the current size, additional elements are uninitialized.
-    /// - If `sz` is smaller than the current size, additional elements are truncated but **not** dropped.
-    ///   It is the responsibility of the caller of this method to drop these elements.
+    /// If `sz` is larger than the current size, additional elements are uninitialized.
+    /// If `sz` is smaller than the current size, additional elements are truncated.
     #[inline]
-    pub unsafe fn resize(mut self, sz: usize) -> Vec<MaybeUninit<T>> {
+    pub unsafe fn resize(mut self, sz: usize) -> Vec<T> {
         let len = self.len();
 
-        let new_data = if sz < len {
-            // Use `set_len` instead of `truncate` because we don’t want to
-            // drop the removed elements (it’s the caller’s responsibility).
+        if sz < len {
             self.data.set_len(sz);
             self.data.shrink_to_fit();
-
-            // Safety:
-            // - MaybeUninit<T> has the same alignment and layout as T.
-            // - The length and capacity come from a valid vector.
-            Vec::from_raw_parts(
-                self.data.as_mut_ptr() as *mut MaybeUninit<T>,
-                self.data.len(),
-                self.data.capacity(),
-            )
         } else {
             self.data.reserve_exact(sz - len);
+            self.data.set_len(sz);
+        }
 
-            // Safety:
-            // - MaybeUninit<T> has the same alignment and layout as T.
-            // - The length and capacity come from a valid vector.
-            let mut new_data = Vec::from_raw_parts(
-                self.data.as_mut_ptr() as *mut MaybeUninit<T>,
-                self.data.len(),
-                self.data.capacity(),
-            );
-
-            // Safety: we can set the length here because MaybeUninit is always assumed
-            //         to be initialized.
-            new_data.set_len(sz);
-            new_data
-        };
-
-        // Avoid double-free by forgetting `self` because its data buffer has
-        // been transfered to `new_data`.
-        std::mem::forget(self);
-        new_data
+        self.data
     }
 
     /// The number of elements on the underlying vector.
     #[inline]
-    #[must_use]
     pub fn len(&self) -> usize {
         self.data.len()
     }
 
     /// Returns true if the underlying vector contains no elements.
     #[inline]
-    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
-
-    /// A slice containing all the components stored in this storage in column-major order.
-    #[inline]
-    pub fn as_slice(&self) -> &[T] {
-        &self.data[..]
-    }
-
-    /// A mutable slice containing all the components stored in this storage in column-major order.
-    #[inline]
-    pub fn as_mut_slice(&mut self) -> &mut [T] {
-        &mut self.data[..]
-    }
 }
 
-impl<T, R: Dim, C: Dim> From<VecStorage<T, R, C>> for Vec<T> {
-    fn from(vec: VecStorage<T, R, C>) -> Self {
-        vec.data
+impl<T, R: Dim, C: Dim> Into<Vec<T>> for VecStorage<T, R, C> {
+    fn into(self) -> Vec<T> {
+        self.data
     }
 }
 
@@ -192,7 +152,10 @@ impl<T, R: Dim, C: Dim> From<VecStorage<T, R, C>> for Vec<T> {
  * Dynamic − Dynamic
  *
  */
-unsafe impl<T, C: Dim> RawStorage<T, Dynamic, C> for VecStorage<T, Dynamic, C> {
+unsafe impl<T: Scalar, C: Dim> Storage<T, Dynamic, C> for VecStorage<T, Dynamic, C>
+where
+    DefaultAllocator: Allocator<T, Dynamic, C, Buffer = Self>,
+{
     type RStride = U1;
     type CStride = Dynamic;
 
@@ -217,16 +180,6 @@ unsafe impl<T, C: Dim> RawStorage<T, Dynamic, C> for VecStorage<T, Dynamic, C> {
     }
 
     #[inline]
-    unsafe fn as_slice_unchecked(&self) -> &[T] {
-        &self.data
-    }
-}
-
-unsafe impl<T: Scalar, C: Dim> Storage<T, Dynamic, C> for VecStorage<T, Dynamic, C>
-where
-    DefaultAllocator: Allocator<T, Dynamic, C, Buffer = Self>,
-{
-    #[inline]
     fn into_owned(self) -> Owned<T, Dynamic, C>
     where
         DefaultAllocator: Allocator<T, Dynamic, C>,
@@ -241,9 +194,17 @@ where
     {
         self.clone()
     }
+
+    #[inline]
+    fn as_slice(&self) -> &[T] {
+        &self.data
+    }
 }
 
-unsafe impl<T, R: DimName> RawStorage<T, R, Dynamic> for VecStorage<T, R, Dynamic> {
+unsafe impl<T: Scalar, R: DimName> Storage<T, R, Dynamic> for VecStorage<T, R, Dynamic>
+where
+    DefaultAllocator: Allocator<T, R, Dynamic, Buffer = Self>,
+{
     type RStride = U1;
     type CStride = R;
 
@@ -268,16 +229,6 @@ unsafe impl<T, R: DimName> RawStorage<T, R, Dynamic> for VecStorage<T, R, Dynami
     }
 
     #[inline]
-    unsafe fn as_slice_unchecked(&self) -> &[T] {
-        &self.data
-    }
-}
-
-unsafe impl<T: Scalar, R: DimName> Storage<T, R, Dynamic> for VecStorage<T, R, Dynamic>
-where
-    DefaultAllocator: Allocator<T, R, Dynamic, Buffer = Self>,
-{
-    #[inline]
     fn into_owned(self) -> Owned<T, R, Dynamic>
     where
         DefaultAllocator: Allocator<T, R, Dynamic>,
@@ -292,26 +243,42 @@ where
     {
         self.clone()
     }
+
+    #[inline]
+    fn as_slice(&self) -> &[T] {
+        &self.data
+    }
 }
 
 /*
  *
- * RawStorageMut, ContiguousStorage.
+ * StorageMut, ContiguousStorage.
  *
  */
-unsafe impl<T, C: Dim> RawStorageMut<T, Dynamic, C> for VecStorage<T, Dynamic, C> {
+unsafe impl<T: Scalar, C: Dim> StorageMut<T, Dynamic, C> for VecStorage<T, Dynamic, C>
+where
+    DefaultAllocator: Allocator<T, Dynamic, C, Buffer = Self>,
+{
     #[inline]
     fn ptr_mut(&mut self) -> *mut T {
         self.data.as_mut_ptr()
     }
 
     #[inline]
-    unsafe fn as_mut_slice_unchecked(&mut self) -> &mut [T] {
+    fn as_mut_slice(&mut self) -> &mut [T] {
         &mut self.data[..]
     }
 }
 
-unsafe impl<T, R: Dim, C: Dim> IsContiguous for VecStorage<T, R, C> {}
+unsafe impl<T: Scalar, C: Dim> ContiguousStorage<T, Dynamic, C> for VecStorage<T, Dynamic, C> where
+    DefaultAllocator: Allocator<T, Dynamic, C, Buffer = Self>
+{
+}
+
+unsafe impl<T: Scalar, C: Dim> ContiguousStorageMut<T, Dynamic, C> for VecStorage<T, Dynamic, C> where
+    DefaultAllocator: Allocator<T, Dynamic, C, Buffer = Self>
+{
+}
 
 impl<T, C1, C2> ReshapableStorage<T, Dynamic, C1, Dynamic, C2> for VecStorage<T, Dynamic, C1>
 where
@@ -349,14 +316,17 @@ where
     }
 }
 
-unsafe impl<T, R: DimName> RawStorageMut<T, R, Dynamic> for VecStorage<T, R, Dynamic> {
+unsafe impl<T: Scalar, R: DimName> StorageMut<T, R, Dynamic> for VecStorage<T, R, Dynamic>
+where
+    DefaultAllocator: Allocator<T, R, Dynamic, Buffer = Self>,
+{
     #[inline]
     fn ptr_mut(&mut self) -> *mut T {
         self.data.as_mut_ptr()
     }
 
     #[inline]
-    unsafe fn as_mut_slice_unchecked(&mut self) -> &mut [T] {
+    fn as_mut_slice(&mut self) -> &mut [T] {
         &mut self.data[..]
     }
 }
@@ -397,6 +367,31 @@ where
     }
 }
 
+#[cfg(feature = "abomonation-serialize")]
+impl<T: Abomonation, R: Dim, C: Dim> Abomonation for VecStorage<T, R, C> {
+    unsafe fn entomb<W: Write>(&self, writer: &mut W) -> IOResult<()> {
+        self.data.entomb(writer)
+    }
+
+    unsafe fn exhume<'a, 'b>(&'a mut self, bytes: &'b mut [u8]) -> Option<&'b mut [u8]> {
+        self.data.exhume(bytes)
+    }
+
+    fn extent(&self) -> usize {
+        self.data.extent()
+    }
+}
+
+unsafe impl<T: Scalar, R: DimName> ContiguousStorage<T, R, Dynamic> for VecStorage<T, R, Dynamic> where
+    DefaultAllocator: Allocator<T, R, Dynamic, Buffer = Self>
+{
+}
+
+unsafe impl<T: Scalar, R: DimName> ContiguousStorageMut<T, R, Dynamic> for VecStorage<T, R, Dynamic> where
+    DefaultAllocator: Allocator<T, R, Dynamic, Buffer = Self>
+{
+}
+
 impl<T, R: Dim> Extend<T> for VecStorage<T, R, Dynamic> {
     /// Extends the number of columns of the `VecStorage` with elements
     /// from the given iterator.
@@ -431,7 +426,7 @@ where
     T: Scalar,
     R: Dim,
     RV: Dim,
-    SV: RawStorage<T, RV>,
+    SV: Storage<T, RV>,
     ShapeConstraint: SameNumberOfRows<R, RV>,
 {
     /// Extends the number of columns of the `VecStorage` with vectors

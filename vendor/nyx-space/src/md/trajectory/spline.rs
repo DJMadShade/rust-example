@@ -1,6 +1,6 @@
 /*
     Nyx, blazing fast astrodynamics
-    Copyright (C) 2022 Christopher Rabotin <christopher.rabotin@gmail.com>
+    Copyright (C) 2021 Christopher Rabotin <christopher.rabotin@gmail.com>
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -16,7 +16,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-use super::{InterpState, TrajError};
+use super::InterpState;
 use crate::linalg::allocator::Allocator;
 use crate::linalg::DefaultAllocator;
 use crate::polyfit::Polynomial;
@@ -51,11 +51,17 @@ where
         // Compute the normalized time
         let dur_into_window = epoch - self.start_epoch;
         if dur_into_window > self.duration {
-            return Err(NyxError::Trajectory(TrajError::OutOfSpline {
-                req_epoch: epoch,
-                req_dur: dur_into_window,
-                spline_dur: self.duration,
-            }));
+            return Err(NyxError::OutOfInterpolationWindow(format!(
+                "Requested trajectory at time {} but that is past the interpolation window by {} (window of {})",
+                epoch, dur_into_window, self.duration
+            )));
+        } else if dur_into_window.in_seconds() < -1.0 {
+            // We should not be in this window, but in the next one
+            // We allow for a delta of one second because of the rounding of the indexing.
+            return Err(NyxError::InvalidInterpolationData(format!(
+                "Bug: should be in next window: {}",
+                dur_into_window
+            )));
         }
 
         let t_prime = normalize(

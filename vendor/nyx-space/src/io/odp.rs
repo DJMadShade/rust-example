@@ -1,6 +1,6 @@
 /*
     Nyx, blazing fast astrodynamics
-    Copyright (C) 2022 Christopher Rabotin <christopher.rabotin@gmail.com>
+    Copyright (C) 2021 Christopher Rabotin <christopher.rabotin@gmail.com>
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -30,7 +30,7 @@ use crate::od::ui::snc::SNC3;
 use crate::od::ui::*;
 use crate::od::MeasurementDevice;
 use crate::propagators::Propagator;
-use crate::time::{Duration, Unit};
+use crate::time::{Duration, TimeUnit};
 use crate::Orbit;
 use std::str::FromStr;
 use std::sync::mpsc::channel;
@@ -249,7 +249,7 @@ impl<'a> OdpScenario<'a> {
                             let disable_time = match &odp_seq.snc_disable {
                                 None => {
                                     warn!("No SNC disable time specified, assuming 120 seconds");
-                                    2 * Unit::Minute
+                                    2 * TimeUnit::Minute
                                 }
                                 Some(snc_disable_dt) => match Duration::from_str(snc_disable_dt) {
                                     Ok(d) => d,
@@ -319,7 +319,7 @@ impl<'a> OdpScenario<'a> {
                         },
                         ekf_disable_time: match &odp_seq.ekf_disable_time {
                             Some(val) => *val,
-                            None => 1 * Unit::Hour, // defaults to one hour
+                            None => 1 * TimeUnit::Hour, // defaults to one hour
                         },
                         stations,
                         formatter,
@@ -354,7 +354,7 @@ impl<'a> OdpScenario<'a> {
         let mut truth_prop = prop_setup.with(self.truth.init_state);
 
         // let mut truth_prop = self.truth.propagator();
-        truth_prop.set_step(10.0 * Unit::Second, true);
+        truth_prop.set_step(10.0 * TimeUnit::Second, true);
 
         // Set up the channels
         let (tx, rx) = channel();
@@ -416,7 +416,7 @@ impl<'a> OdpScenario<'a> {
         let init_state = self.nav.init_state.with_stm();
         let mut nav = prop_setup.with(init_state);
 
-        nav.set_step(10.0 * Unit::Second, true);
+        nav.set_step(10.0 * TimeUnit::Second, true);
 
         let kf = self.kf;
         let trig = StdEkfTrigger::new(self.ekf_msr_trigger, self.ekf_disable_time);

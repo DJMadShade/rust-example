@@ -1,10 +1,10 @@
-use crate::storage::RawStorage;
+use crate::storage::Storage;
 use crate::{ComplexField, Dim, Matrix, Scalar, SimdComplexField, SimdPartialOrd, Vector};
 use num::{Signed, Zero};
 use simba::simd::SimdSigned;
 
 /// # Find the min and max components
-impl<T: Scalar, R: Dim, C: Dim, S: RawStorage<T, R, C>> Matrix<T, R, C, S> {
+impl<T: Scalar, R: Dim, C: Dim, S: Storage<T, R, C>> Matrix<T, R, C, S> {
     /// Returns the absolute value of the component with the largest absolute value.
     /// # Example
     /// ```
@@ -13,7 +13,6 @@ impl<T: Scalar, R: Dim, C: Dim, S: RawStorage<T, R, C>> Matrix<T, R, C, S> {
     /// assert_eq!(Vector3::new(-1.0, -2.0, -3.0).amax(), 3.0);
     /// ```
     #[inline]
-    #[must_use]
     pub fn amax(&self) -> T
     where
         T: Zero + SimdSigned + SimdPartialOrd,
@@ -34,14 +33,13 @@ impl<T: Scalar, R: Dim, C: Dim, S: RawStorage<T, R, C>> Matrix<T, R, C, S> {
     ///     Complex::new(1.0, 3.0)).camax(), 5.0);
     /// ```
     #[inline]
-    #[must_use]
     pub fn camax(&self) -> T::SimdRealField
     where
         T: SimdComplexField,
     {
         self.fold_with(
-            |e| e.unwrap_or(&T::zero()).clone().simd_norm1(),
-            |a, b| a.simd_max(b.clone().simd_norm1()),
+            |e| e.unwrap_or(&T::zero()).simd_norm1(),
+            |a, b| a.simd_max(b.simd_norm1()),
         )
     }
 
@@ -54,14 +52,13 @@ impl<T: Scalar, R: Dim, C: Dim, S: RawStorage<T, R, C>> Matrix<T, R, C, S> {
     /// assert_eq!(Vector3::new(5u32, 2, 3).max(), 5);
     /// ```
     #[inline]
-    #[must_use]
     pub fn max(&self) -> T
     where
         T: SimdPartialOrd + Zero,
     {
         self.fold_with(
-            |e| e.cloned().unwrap_or_else(T::zero),
-            |a, b| a.simd_max(b.clone()),
+            |e| e.map(|e| e.inlined_clone()).unwrap_or_else(T::zero),
+            |a, b| a.simd_max(b.inlined_clone()),
         )
     }
 
@@ -73,7 +70,6 @@ impl<T: Scalar, R: Dim, C: Dim, S: RawStorage<T, R, C>> Matrix<T, R, C, S> {
     /// assert_eq!(Vector3::new(10.0, 2.0, 30.0).amin(), 2.0);
     /// ```
     #[inline]
-    #[must_use]
     pub fn amin(&self) -> T
     where
         T: Zero + SimdPartialOrd + SimdSigned,
@@ -94,17 +90,16 @@ impl<T: Scalar, R: Dim, C: Dim, S: RawStorage<T, R, C>> Matrix<T, R, C, S> {
     ///     Complex::new(1.0, 3.0)).camin(), 3.0);
     /// ```
     #[inline]
-    #[must_use]
     pub fn camin(&self) -> T::SimdRealField
     where
         T: SimdComplexField,
     {
         self.fold_with(
             |e| {
-                e.map(|e| e.clone().simd_norm1())
+                e.map(|e| e.simd_norm1())
                     .unwrap_or_else(T::SimdRealField::zero)
             },
-            |a, b| a.simd_min(b.clone().simd_norm1()),
+            |a, b| a.simd_min(b.simd_norm1()),
         )
     }
 
@@ -117,14 +112,13 @@ impl<T: Scalar, R: Dim, C: Dim, S: RawStorage<T, R, C>> Matrix<T, R, C, S> {
     /// assert_eq!(Vector3::new(5u32, 2, 3).min(), 2);
     /// ```
     #[inline]
-    #[must_use]
     pub fn min(&self) -> T
     where
         T: SimdPartialOrd + Zero,
     {
         self.fold_with(
-            |e| e.cloned().unwrap_or_else(T::zero),
-            |a, b| a.simd_min(b.clone()),
+            |e| e.map(|e| e.inlined_clone()).unwrap_or_else(T::zero),
+            |a, b| a.simd_min(b.inlined_clone()),
         )
     }
 
@@ -142,19 +136,18 @@ impl<T: Scalar, R: Dim, C: Dim, S: RawStorage<T, R, C>> Matrix<T, R, C, S> {
     /// assert_eq!(mat.icamax_full(), (1, 0));
     /// ```
     #[inline]
-    #[must_use]
     pub fn icamax_full(&self) -> (usize, usize)
     where
         T: ComplexField,
     {
         assert!(!self.is_empty(), "The input matrix must not be empty.");
 
-        let mut the_max = unsafe { self.get_unchecked((0, 0)).clone().norm1() };
+        let mut the_max = unsafe { self.get_unchecked((0, 0)).norm1() };
         let mut the_ij = (0, 0);
 
         for j in 0..self.ncols() {
             for i in 0..self.nrows() {
-                let val = unsafe { self.get_unchecked((i, j)).clone().norm1() };
+                let val = unsafe { self.get_unchecked((i, j)).norm1() };
 
                 if val > the_max {
                     the_max = val;
@@ -167,7 +160,7 @@ impl<T: Scalar, R: Dim, C: Dim, S: RawStorage<T, R, C>> Matrix<T, R, C, S> {
     }
 }
 
-impl<T: Scalar + PartialOrd + Signed, R: Dim, C: Dim, S: RawStorage<T, R, C>> Matrix<T, R, C, S> {
+impl<T: Scalar + PartialOrd + Signed, R: Dim, C: Dim, S: Storage<T, R, C>> Matrix<T, R, C, S> {
     /// Computes the index of the matrix component with the largest absolute value.
     ///
     /// # Examples:
@@ -179,7 +172,6 @@ impl<T: Scalar + PartialOrd + Signed, R: Dim, C: Dim, S: RawStorage<T, R, C>> Ma
     /// assert_eq!(mat.iamax_full(), (1, 2));
     /// ```
     #[inline]
-    #[must_use]
     pub fn iamax_full(&self) -> (usize, usize) {
         assert!(!self.is_empty(), "The input matrix must not be empty.");
 
@@ -203,7 +195,7 @@ impl<T: Scalar + PartialOrd + Signed, R: Dim, C: Dim, S: RawStorage<T, R, C>> Ma
 
 // TODO: find a way to avoid code duplication just for complex number support.
 /// # Find the min and max components (vector-specific methods)
-impl<T: Scalar, D: Dim, S: RawStorage<T, D>> Vector<T, D, S> {
+impl<T: Scalar, D: Dim, S: Storage<T, D>> Vector<T, D, S> {
     /// Computes the index of the vector component with the largest complex or real absolute value.
     ///
     /// # Examples:
@@ -217,18 +209,17 @@ impl<T: Scalar, D: Dim, S: RawStorage<T, D>> Vector<T, D, S> {
     /// assert_eq!(vec.icamax(), 2);
     /// ```
     #[inline]
-    #[must_use]
     pub fn icamax(&self) -> usize
     where
         T: ComplexField,
     {
         assert!(!self.is_empty(), "The input vector must not be empty.");
 
-        let mut the_max = unsafe { self.vget_unchecked(0).clone().norm1() };
+        let mut the_max = unsafe { self.vget_unchecked(0).norm1() };
         let mut the_i = 0;
 
         for i in 1..self.nrows() {
-            let val = unsafe { self.vget_unchecked(i).clone().norm1() };
+            let val = unsafe { self.vget_unchecked(i).norm1() };
 
             if val > the_max {
                 the_max = val;
@@ -249,7 +240,6 @@ impl<T: Scalar, D: Dim, S: RawStorage<T, D>> Vector<T, D, S> {
     /// assert_eq!(vec.argmax(), (2, 13));
     /// ```
     #[inline]
-    #[must_use]
     pub fn argmax(&self) -> (usize, T)
     where
         T: PartialOrd,
@@ -268,7 +258,7 @@ impl<T: Scalar, D: Dim, S: RawStorage<T, D>> Vector<T, D, S> {
             }
         }
 
-        (the_i, the_max.clone())
+        (the_i, the_max.inlined_clone())
     }
 
     /// Computes the index of the vector component with the largest value.
@@ -281,7 +271,6 @@ impl<T: Scalar, D: Dim, S: RawStorage<T, D>> Vector<T, D, S> {
     /// assert_eq!(vec.imax(), 2);
     /// ```
     #[inline]
-    #[must_use]
     pub fn imax(&self) -> usize
     where
         T: PartialOrd,
@@ -299,7 +288,6 @@ impl<T: Scalar, D: Dim, S: RawStorage<T, D>> Vector<T, D, S> {
     /// assert_eq!(vec.iamax(), 1);
     /// ```
     #[inline]
-    #[must_use]
     pub fn iamax(&self) -> usize
     where
         T: PartialOrd + Signed,
@@ -331,7 +319,6 @@ impl<T: Scalar, D: Dim, S: RawStorage<T, D>> Vector<T, D, S> {
     /// assert_eq!(vec.argmin(), (1, -15));
     /// ```
     #[inline]
-    #[must_use]
     pub fn argmin(&self) -> (usize, T)
     where
         T: PartialOrd,
@@ -350,7 +337,7 @@ impl<T: Scalar, D: Dim, S: RawStorage<T, D>> Vector<T, D, S> {
             }
         }
 
-        (the_i, the_min.clone())
+        (the_i, the_min.inlined_clone())
     }
 
     /// Computes the index of the vector component with the smallest value.
@@ -363,7 +350,6 @@ impl<T: Scalar, D: Dim, S: RawStorage<T, D>> Vector<T, D, S> {
     /// assert_eq!(vec.imin(), 1);
     /// ```
     #[inline]
-    #[must_use]
     pub fn imin(&self) -> usize
     where
         T: PartialOrd,
@@ -381,7 +367,6 @@ impl<T: Scalar, D: Dim, S: RawStorage<T, D>> Vector<T, D, S> {
     /// assert_eq!(vec.iamin(), 0);
     /// ```
     #[inline]
-    #[must_use]
     pub fn iamin(&self) -> usize
     where
         T: PartialOrd + Signed,

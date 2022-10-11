@@ -31,9 +31,6 @@ use std::cmp::{Eq, PartialEq};
 /// * [Conversion to a matrix <span style="float:right;">`to_rotation_matrix`, `to_homogeneous`…</span>](#conversion-to-a-matrix)
 pub type UnitComplex<T> = Unit<Complex<T>>;
 
-#[cfg(feature = "cuda")]
-unsafe impl<T: cust_core::DeviceCopy> cust_core::DeviceCopy for UnitComplex<T> {}
-
 impl<T: Scalar + PartialEq> PartialEq for UnitComplex<T> {
     #[inline]
     fn eq(&self, rhs: &Self) -> bool {
@@ -50,25 +47,25 @@ impl<T: SimdRealField> Normed for Complex<T> {
     fn norm(&self) -> T::SimdRealField {
         // We don't use `.norm_sqr()` because it requires
         // some very strong Num trait requirements.
-        (self.re.clone() * self.re.clone() + self.im.clone() * self.im.clone()).simd_sqrt()
+        (self.re * self.re + self.im * self.im).simd_sqrt()
     }
 
     #[inline]
     fn norm_squared(&self) -> T::SimdRealField {
         // We don't use `.norm_sqr()` because it requires
         // some very strong Num trait requirements.
-        self.re.clone() * self.re.clone() + self.im.clone() * self.im.clone()
+        self.re * self.re + self.im * self.im
     }
 
     #[inline]
     fn scale_mut(&mut self, n: Self::Norm) {
-        self.re *= n.clone();
+        self.re *= n;
         self.im *= n;
     }
 
     #[inline]
     fn unscale_mut(&mut self, n: Self::Norm) {
-        self.re /= n.clone();
+        self.re /= n;
         self.im /= n;
     }
 }
@@ -87,9 +84,8 @@ where
     /// assert_eq!(rot.angle(), 1.78);
     /// ```
     #[inline]
-    #[must_use]
     pub fn angle(&self) -> T {
-        self.im.clone().simd_atan2(self.re.clone())
+        self.im.simd_atan2(self.re)
     }
 
     /// The sine of the rotation angle.
@@ -102,9 +98,8 @@ where
     /// assert_eq!(rot.sin_angle(), angle.sin());
     /// ```
     #[inline]
-    #[must_use]
     pub fn sin_angle(&self) -> T {
-        self.im.clone()
+        self.im
     }
 
     /// The cosine of the rotation angle.
@@ -117,9 +112,8 @@ where
     /// assert_eq!(rot.cos_angle(),angle.cos());
     /// ```
     #[inline]
-    #[must_use]
     pub fn cos_angle(&self) -> T {
-        self.re.clone()
+        self.re
     }
 
     /// The rotation angle returned as a 1-dimensional vector.
@@ -127,7 +121,6 @@ where
     /// This is generally used in the context of generic programming. Using
     /// the `.angle()` method instead is more common.
     #[inline]
-    #[must_use]
     pub fn scaled_axis(&self) -> Vector1<T> {
         Vector1::new(self.angle())
     }
@@ -138,7 +131,6 @@ where
     /// the `.angle()` method instead is more common.
     /// Returns `None` if the angle is zero.
     #[inline]
-    #[must_use]
     pub fn axis_angle(&self) -> Option<(Unit<Vector1<T>>, T)>
     where
         T: RealField,
@@ -147,10 +139,10 @@ where
 
         if ang.is_zero() {
             None
-        } else if ang.is_sign_positive() {
-            Some((Unit::new_unchecked(Vector1::x()), ang))
+        } else if ang.is_sign_negative() {
+            Some((Unit::new_unchecked(Vector1::x()), -ang))
         } else {
-            Some((Unit::new_unchecked(-Vector1::<T>::x()), -ang))
+            Some((Unit::new_unchecked(-Vector1::<T>::x()), ang))
         }
     }
 
@@ -165,7 +157,6 @@ where
     /// assert_relative_eq!(rot1.angle_to(&rot2), 1.6);
     /// ```
     #[inline]
-    #[must_use]
     pub fn angle_to(&self, other: &Self) -> T {
         let delta = self.rotation_to(other);
         delta.angle()
@@ -226,7 +217,7 @@ where
     #[inline]
     pub fn conjugate_mut(&mut self) {
         let me = self.as_mut_unchecked();
-        me.im = -me.im.clone();
+        me.im = -me.im;
     }
 
     /// Inverts in-place this unit complex number.
@@ -263,12 +254,11 @@ where
     /// assert_eq!(rot.to_rotation_matrix(), expected);
     /// ```
     #[inline]
-    #[must_use]
-    pub fn to_rotation_matrix(self) -> Rotation2<T> {
-        let r = self.re.clone();
-        let i = self.im.clone();
+    pub fn to_rotation_matrix(&self) -> Rotation2<T> {
+        let r = self.re;
+        let i = self.im;
 
-        Rotation2::from_matrix_unchecked(Matrix2::new(r.clone(), -i.clone(), i, r))
+        Rotation2::from_matrix_unchecked(Matrix2::new(r, -i, i, r))
     }
 
     /// Converts this unit complex number into its equivalent homogeneous transformation matrix.
@@ -284,8 +274,7 @@ where
     /// assert_eq!(rot.to_homogeneous(), expected);
     /// ```
     #[inline]
-    #[must_use]
-    pub fn to_homogeneous(self) -> Matrix3<T> {
+    pub fn to_homogeneous(&self) -> Matrix3<T> {
         self.to_rotation_matrix().to_homogeneous()
     }
 }
@@ -309,7 +298,6 @@ where
     /// assert_relative_eq!(transformed_point, Point2::new(-2.0, 1.0), epsilon = 1.0e-6);
     /// ```
     #[inline]
-    #[must_use]
     pub fn transform_point(&self, pt: &Point2<T>) -> Point2<T> {
         self * pt
     }
@@ -328,7 +316,6 @@ where
     /// assert_relative_eq!(transformed_vector, Vector2::new(-2.0, 1.0), epsilon = 1.0e-6);
     /// ```
     #[inline]
-    #[must_use]
     pub fn transform_vector(&self, v: &Vector2<T>) -> Vector2<T> {
         self * v
     }
@@ -345,7 +332,6 @@ where
     /// assert_relative_eq!(transformed_point, Point2::new(2.0, -1.0), epsilon = 1.0e-6);
     /// ```
     #[inline]
-    #[must_use]
     pub fn inverse_transform_point(&self, pt: &Point2<T>) -> Point2<T> {
         // TODO: would it be useful performancewise not to call inverse explicitly (i-e. implement
         // the inverse transformation explicitly here) ?
@@ -364,7 +350,6 @@ where
     /// assert_relative_eq!(transformed_vector, Vector2::new(2.0, -1.0), epsilon = 1.0e-6);
     /// ```
     #[inline]
-    #[must_use]
     pub fn inverse_transform_vector(&self, v: &Vector2<T>) -> Vector2<T> {
         self.inverse() * v
     }
@@ -381,7 +366,6 @@ where
     /// assert_relative_eq!(transformed_vector, -Vector2::y_axis(), epsilon = 1.0e-6);
     /// ```
     #[inline]
-    #[must_use]
     pub fn inverse_transform_unit_vector(&self, v: &Unit<Vector2<T>>) -> Unit<Vector2<T>> {
         self.inverse() * v
     }
@@ -408,15 +392,13 @@ where
     /// assert_relative_eq!(rot.angle(), std::f32::consts::FRAC_PI_2);
     /// ```
     #[inline]
-    #[must_use]
     pub fn slerp(&self, other: &Self, t: T) -> Self {
-        let delta = other / self;
-        self * Self::new(delta.angle() * t)
+        Self::new(self.angle() * (T::one() - t) + other.angle() * t)
     }
 }
 
 impl<T: RealField + fmt::Display> fmt::Display for UnitComplex<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "UnitComplex angle: {}", self.angle())
     }
 }
@@ -431,7 +413,7 @@ impl<T: RealField> AbsDiffEq for UnitComplex<T> {
 
     #[inline]
     fn abs_diff_eq(&self, other: &Self, epsilon: Self::Epsilon) -> bool {
-        self.re.abs_diff_eq(&other.re, epsilon.clone()) && self.im.abs_diff_eq(&other.im, epsilon)
+        self.re.abs_diff_eq(&other.re, epsilon) && self.im.abs_diff_eq(&other.im, epsilon)
     }
 }
 
@@ -448,8 +430,7 @@ impl<T: RealField> RelativeEq for UnitComplex<T> {
         epsilon: Self::Epsilon,
         max_relative: Self::Epsilon,
     ) -> bool {
-        self.re
-            .relative_eq(&other.re, epsilon.clone(), max_relative.clone())
+        self.re.relative_eq(&other.re, epsilon, max_relative)
             && self.im.relative_eq(&other.im, epsilon, max_relative)
     }
 }
@@ -462,7 +443,7 @@ impl<T: RealField> UlpsEq for UnitComplex<T> {
 
     #[inline]
     fn ulps_eq(&self, other: &Self, epsilon: Self::Epsilon, max_ulps: u32) -> bool {
-        self.re.ulps_eq(&other.re, epsilon.clone(), max_ulps)
+        self.re.ulps_eq(&other.re, epsilon, max_ulps)
             && self.im.ulps_eq(&other.im, epsilon, max_ulps)
     }
 }

@@ -1,5 +1,6 @@
-use std::fmt::{Debug, Display};
-use std::io::{self, Read, Write};
+use std::fmt::Display;
+use std::io;
+use std::io::Write;
 use std::sync::{Arc, Mutex};
 
 #[cfg(unix)]
@@ -9,32 +10,11 @@ use std::os::windows::io::{AsRawHandle, RawHandle};
 
 use crate::{kb::Key, utils::Style};
 
-#[cfg(unix)]
-trait TermWrite: Write + Debug + AsRawFd + Send {}
-#[cfg(unix)]
-impl<T: Write + Debug + AsRawFd + Send> TermWrite for T {}
-
-#[cfg(unix)]
-trait TermRead: Read + Debug + AsRawFd + Send {}
-#[cfg(unix)]
-impl<T: Read + Debug + AsRawFd + Send> TermRead for T {}
-
-#[cfg(unix)]
-#[derive(Debug, Clone)]
-pub struct ReadWritePair {
-    #[allow(unused)]
-    read: Arc<Mutex<dyn TermRead>>,
-    write: Arc<Mutex<dyn TermWrite>>,
-    style: Style,
-}
-
 /// Where the term is writing.
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TermTarget {
     Stdout,
     Stderr,
-    #[cfg(unix)]
-    ReadWritePair(ReadWritePair),
 }
 
 #[derive(Debug)]
@@ -61,13 +41,13 @@ pub enum TermFamily {
 pub struct TermFeatures<'a>(&'a Term);
 
 impl<'a> TermFeatures<'a> {
-    /// Check if this is a real user attended terminal (`isatty`)
+    /// Checks if this is a real user attended terminal (`isatty`)
     #[inline]
     pub fn is_attended(&self) -> bool {
         is_a_terminal(self.0)
     }
 
-    /// Check if colors are supported by this terminal.
+    /// Checks if colors are supported by this terminal.
     ///
     /// This does not check if colors are enabled.  Currently all terminals
     /// are considered to support colors
@@ -76,7 +56,7 @@ impl<'a> TermFeatures<'a> {
         is_a_color_terminal(self.0)
     }
 
-    /// Check if this terminal is an msys terminal.
+    /// Checks if this terminal is an msys terminal.
     ///
     /// This is sometimes useful to disable features that are known to not
     /// work on msys terminals or require special handling.
@@ -84,7 +64,7 @@ impl<'a> TermFeatures<'a> {
     pub fn is_msys_tty(&self) -> bool {
         #[cfg(windows)]
         {
-            msys_tty_on(self.0)
+            msys_tty_on(&self.0)
         }
         #[cfg(not(windows))]
         {
@@ -92,13 +72,13 @@ impl<'a> TermFeatures<'a> {
         }
     }
 
-    /// Check if this terminal wants emojis.
+    /// Checks if this terminal wants emojis.
     #[inline]
     pub fn wants_emoji(&self) -> bool {
         self.is_attended() && wants_emoji()
     }
 
-    /// Return the family of the terminal.
+    /// Returns the family of the terminal.
     #[inline]
     pub fn family(&self) -> TermFamily {
         if !self.is_attended() {
@@ -143,7 +123,7 @@ impl Term {
         term
     }
 
-    /// Return a new unbuffered terminal.
+    /// Return a new unbuffered terminal
     #[inline]
     pub fn stdout() -> Term {
         Term::with_inner(TermInner {
@@ -152,7 +132,7 @@ impl Term {
         })
     }
 
-    /// Return a new unbuffered terminal to stderr.
+    /// Return a new unbuffered terminal to stderr
     #[inline]
     pub fn stderr() -> Term {
         Term::with_inner(TermInner {
@@ -161,7 +141,7 @@ impl Term {
         })
     }
 
-    /// Return a new buffered terminal.
+    /// Return a new buffered terminal
     pub fn buffered_stdout() -> Term {
         Term::with_inner(TermInner {
             target: TermTarget::Stdout,
@@ -169,7 +149,7 @@ impl Term {
         })
     }
 
-    /// Return a new buffered terminal to stderr.
+    /// Return a new buffered terminal to stderr
     pub fn buffered_stderr() -> Term {
         Term::with_inner(TermInner {
             target: TermTarget::Stderr,
@@ -177,48 +157,19 @@ impl Term {
         })
     }
 
-    /// Return a terminal for the given Read/Write pair styled like stderr.
-    #[cfg(unix)]
-    pub fn read_write_pair<R, W>(read: R, write: W) -> Term
-    where
-        R: Read + Debug + AsRawFd + Send + 'static,
-        W: Write + Debug + AsRawFd + Send + 'static,
-    {
-        Self::read_write_pair_with_style(read, write, Style::new().for_stderr())
-    }
-
-    /// Return a terminal for the given Read/Write pair.
-    #[cfg(unix)]
-    pub fn read_write_pair_with_style<R, W>(read: R, write: W, style: Style) -> Term
-    where
-        R: Read + Debug + AsRawFd + Send + 'static,
-        W: Write + Debug + AsRawFd + Send + 'static,
-    {
-        Term::with_inner(TermInner {
-            target: TermTarget::ReadWritePair(ReadWritePair {
-                read: Arc::new(Mutex::new(read)),
-                write: Arc::new(Mutex::new(write)),
-                style,
-            }),
-            buffer: None,
-        })
-    }
-
-    /// Return the style for this terminal.
+    /// Returns the style for the term
     #[inline]
     pub fn style(&self) -> Style {
-        match self.inner.target {
+        match self.target() {
             TermTarget::Stderr => Style::new().for_stderr(),
             TermTarget::Stdout => Style::new().for_stdout(),
-            #[cfg(unix)]
-            TermTarget::ReadWritePair(ReadWritePair { ref style, .. }) => style.clone(),
         }
     }
 
-    /// Return the target of this terminal.
+    /// Returns the target
     #[inline]
     pub fn target(&self) -> TermTarget {
-        self.inner.target.clone()
+        self.inner.target
     }
 
     #[doc(hidden)]
@@ -229,7 +180,7 @@ impl Term {
         }
     }
 
-    /// Write a string to the terminal and add a newline.
+    /// Writes a string to the terminal and adds a newline.
     pub fn write_line(&self, s: &str) -> io::Result<()> {
         match self.inner.buffer {
             Some(ref mutex) => {
@@ -242,7 +193,7 @@ impl Term {
         }
     }
 
-    /// Read a single character from the terminal.
+    /// Read a single character from the terminal
     ///
     /// This does not echo the character and blocks until a single character
     /// is entered.
@@ -320,10 +271,7 @@ impl Term {
                     self.write_str(chr.encode_utf8(&mut bytes_char))?;
                     self.flush()?;
                 }
-                Key::Enter => {
-                    self.write_line("")?;
-                    break;
-                }
+                Key::Enter => break,
                 Key::Unknown => {
                     return Err(io::Error::new(
                         io::ErrorKind::NotConnected,
@@ -336,7 +284,7 @@ impl Term {
         Ok(chars.iter().collect::<String>())
     }
 
-    /// Read a line of input securely.
+    /// Read securely a line of input.
     ///
     /// This is similar to `read_line` but will not echo the output.  This
     /// also switches the terminal into a different mode where not all
@@ -354,7 +302,7 @@ impl Term {
         }
     }
 
-    /// Flush internal buffers.
+    /// Flushes internal buffers.
     ///
     /// This forces the contents of the internal buffer to be written to
     /// the terminal.  This is unnecessary for unbuffered terminals which
@@ -370,85 +318,74 @@ impl Term {
         Ok(())
     }
 
-    /// Check if the terminal is indeed a terminal.
+    /// Checks if the terminal is indeed a terminal.
     #[inline]
     pub fn is_term(&self) -> bool {
         self.is_tty
     }
 
-    /// Check for common terminal features.
+    /// Checks for common terminal features.
     #[inline]
     pub fn features(&self) -> TermFeatures<'_> {
         TermFeatures(self)
     }
 
-    /// Return the terminal size in rows and columns or gets sensible defaults.
+    /// Returns the terminal size in rows and columns or gets sensible defaults.
     #[inline]
     pub fn size(&self) -> (u16, u16) {
         self.size_checked().unwrap_or((24, DEFAULT_WIDTH))
     }
 
-    /// Return the terminal size in rows and columns.
+    /// Returns the terminal size in rows and columns.
     ///
-    /// If the size cannot be reliably determined `None` is returned.
+    /// If the size cannot be reliably determined None is returned.
     #[inline]
     pub fn size_checked(&self) -> Option<(u16, u16)> {
         terminal_size(self)
     }
 
-    /// Move the cursor to row `x` and column `y`. Values are 0-based.
+    /// Moves the cursor to `x` and `y`
     #[inline]
     pub fn move_cursor_to(&self, x: usize, y: usize) -> io::Result<()> {
         move_cursor_to(self, x, y)
     }
 
-    /// Move the cursor up by `n` lines, if possible.
-    ///
-    /// If there are less than `n` lines above the current cursor position,
-    /// the cursor is moved to the top line of the terminal (i.e., as far up as possible).
+    /// Moves the cursor up `n` lines
     #[inline]
     pub fn move_cursor_up(&self, n: usize) -> io::Result<()> {
         move_cursor_up(self, n)
     }
 
-    /// Move the cursor down by `n` lines, if possible.
-    ///
-    /// If there are less than `n` lines below the current cursor position,
-    /// the cursor is moved to the bottom line of the terminal (i.e., as far down as possible).
+    /// Moves the cursor down `n` lines
     #[inline]
     pub fn move_cursor_down(&self, n: usize) -> io::Result<()> {
         move_cursor_down(self, n)
     }
 
-    /// Move the cursor `n` characters to the left, if possible.
-    ///
-    /// If there are fewer than `n` characters to the left of the current cursor position,
-    /// the cursor is moved to the beginning of the line (i.e., as far to the left as possible).
+    /// Moves the cursor left `n` lines
     #[inline]
     pub fn move_cursor_left(&self, n: usize) -> io::Result<()> {
         move_cursor_left(self, n)
     }
 
-    /// Move the cursor `n` characters to the right.
-    ///
-    /// If there are fewer than `n` characters to the right of the current cursor position,
-    /// the cursor is moved to the end of the current line (i.e., as far to the right as possible).
+    /// Moves the cursor down `n` lines
     #[inline]
     pub fn move_cursor_right(&self, n: usize) -> io::Result<()> {
         move_cursor_right(self, n)
     }
 
-    /// Clear the current line.
+    /// Clears the current line.
     ///
-    /// Position the cursor at the beginning of the current line.
+    /// The positions the cursor at the beginning of the line again.
     #[inline]
     pub fn clear_line(&self) -> io::Result<()> {
         clear_line(self)
     }
 
-    /// Clear the last `n` lines before the current line.
+    /// Clear the last `n` lines.
     ///
-    /// Position the cursor at the beginning of the first line that was cleared.
+    /// This positions the cursor at the beginning of the first line
+    /// that was cleared.
     pub fn clear_last_lines(&self, n: usize) -> io::Result<()> {
         self.move_cursor_up(n)?;
         for _ in 0..n {
@@ -459,28 +396,25 @@ impl Term {
         Ok(())
     }
 
-    /// Clear the entire screen.
-    ///
-    /// Move the cursor to the upper left corner of the screen.
+    /// Clears the entire screen.
     #[inline]
     pub fn clear_screen(&self) -> io::Result<()> {
         clear_screen(self)
     }
 
-    /// Clear everything from the current cursor position to the end of the screen.
-    /// The cursor stays in its position.
+    /// Clears the entire screen.
     #[inline]
     pub fn clear_to_end_of_screen(&self) -> io::Result<()> {
         clear_to_end_of_screen(self)
     }
 
-    /// Clear the last `n` characters of the current line.
+    /// Clears the last char in the the current line.
     #[inline]
     pub fn clear_chars(&self, n: usize) -> io::Result<()> {
         clear_chars(self, n)
     }
 
-    /// Set the terminal title.
+    /// Set the terminal title
     pub fn set_title<T: Display>(&self, title: T) {
         if !self.is_tty {
             return;
@@ -488,13 +422,13 @@ impl Term {
         set_title(title);
     }
 
-    /// Make the cursor visible again.
+    /// Makes cursor visible again
     #[inline]
     pub fn show_cursor(&self) -> io::Result<()> {
         show_cursor(self)
     }
 
-    /// Hide the cursor.
+    /// Hides cursor
     #[inline]
     pub fn hide_cursor(&self) -> io::Result<()> {
         hide_cursor(self)
@@ -531,12 +465,6 @@ impl Term {
                 io::stderr().write_all(bytes)?;
                 io::stderr().flush()?;
             }
-            #[cfg(unix)]
-            TermTarget::ReadWritePair(ReadWritePair { ref write, .. }) => {
-                let mut write = write.lock().unwrap();
-                write.write_all(bytes)?;
-                write.flush()?;
-            }
         }
         Ok(())
     }
@@ -568,9 +496,6 @@ impl AsRawFd for Term {
         match self.inner.target {
             TermTarget::Stdout => libc::STDOUT_FILENO,
             TermTarget::Stderr => libc::STDERR_FILENO,
-            TermTarget::ReadWritePair(ReadWritePair { ref write, .. }) => {
-                write.lock().unwrap().as_raw_fd()
-            }
         }
     }
 }
@@ -590,7 +515,7 @@ impl AsRawHandle for Term {
     }
 }
 
-impl Write for Term {
+impl io::Write for Term {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self.inner.buffer {
             Some(ref buffer) => buffer.lock().unwrap().write_all(buf),
@@ -604,7 +529,7 @@ impl Write for Term {
     }
 }
 
-impl<'a> Write for &'a Term {
+impl<'a> io::Write for &'a Term {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self.inner.buffer {
             Some(ref buffer) => buffer.lock().unwrap().write_all(buf),
@@ -618,13 +543,13 @@ impl<'a> Write for &'a Term {
     }
 }
 
-impl Read for Term {
+impl io::Read for Term {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         io::stdin().read(buf)
     }
 }
 
-impl<'a> Read for &'a Term {
+impl<'a> io::Read for &'a Term {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         io::stdin().read(buf)
     }

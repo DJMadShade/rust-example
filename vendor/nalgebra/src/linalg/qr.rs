@@ -11,7 +11,6 @@ use simba::scalar::ComplexField;
 
 use crate::geometry::Reflection;
 use crate::linalg::householder;
-use std::mem::MaybeUninit;
 
 /// The QR decomposition of a general matrix.
 #[cfg_attr(feature = "serde-serialize-no-std", derive(Serialize, Deserialize))]
@@ -52,38 +51,32 @@ where
 {
     /// Computes the QR decomposition using householder reflections.
     pub fn new(mut matrix: OMatrix<T, R, C>) -> Self {
-        let (nrows, ncols) = matrix.shape_generic();
+        let (nrows, ncols) = matrix.data.shape();
         let min_nrows_ncols = nrows.min(ncols);
 
-        if min_nrows_ncols.value() == 0 {
-            return QR {
-                qr: matrix,
-                diag: Matrix::zeros_generic(min_nrows_ncols, Const::<1>),
-            };
-        }
+        let mut diag =
+            unsafe { crate::unimplemented_or_uninitialized_generic!(min_nrows_ncols, Const::<1>) };
 
-        let mut diag = Matrix::uninit(min_nrows_ncols, Const::<1>);
+        if min_nrows_ncols.value() == 0 {
+            return QR { qr: matrix, diag };
+        }
 
         for i in 0..min_nrows_ncols.value() {
-            diag[i] =
-                MaybeUninit::new(householder::clear_column_unchecked(&mut matrix, i, 0, None));
+            householder::clear_column_unchecked(&mut matrix, &mut diag[i], i, 0, None);
         }
 
-        // Safety: diag is now fully initialized.
-        let diag = unsafe { diag.assume_init() };
         QR { qr: matrix, diag }
     }
 
     /// Retrieves the upper trapezoidal submatrix `R` of this decomposition.
     #[inline]
-    #[must_use]
     pub fn r(&self) -> OMatrix<T, DimMinimum<R, C>, C>
     where
         DefaultAllocator: Allocator<T, DimMinimum<R, C>, C>,
     {
-        let (nrows, ncols) = self.qr.shape_generic();
+        let (nrows, ncols) = self.qr.data.shape();
         let mut res = self.qr.rows_generic(0, nrows.min(ncols)).upper_triangle();
-        res.set_partial_diagonal(self.diag.iter().map(|e| T::from_real(e.clone().modulus())));
+        res.set_partial_diagonal(self.diag.iter().map(|e| T::from_real(e.modulus())));
         res
     }
 
@@ -95,20 +88,19 @@ where
     where
         DefaultAllocator: Reallocator<T, R, C, DimMinimum<R, C>, C>,
     {
-        let (nrows, ncols) = self.qr.shape_generic();
+        let (nrows, ncols) = self.qr.data.shape();
         let mut res = self.qr.resize_generic(nrows.min(ncols), ncols, T::zero());
         res.fill_lower_triangle(T::zero(), 1);
-        res.set_partial_diagonal(self.diag.iter().map(|e| T::from_real(e.clone().modulus())));
+        res.set_partial_diagonal(self.diag.iter().map(|e| T::from_real(e.modulus())));
         res
     }
 
     /// Computes the orthogonal matrix `Q` of this decomposition.
-    #[must_use]
     pub fn q(&self) -> OMatrix<T, R, DimMinimum<R, C>>
     where
         DefaultAllocator: Allocator<T, R, DimMinimum<R, C>>,
     {
-        let (nrows, ncols) = self.qr.shape_generic();
+        let (nrows, ncols) = self.qr.data.shape();
 
         // NOTE: we could build the identity matrix and call q_mul on it.
         // Instead we don't so that we take in account the matrix sparseness.
@@ -121,7 +113,7 @@ where
             let refl = Reflection::new(Unit::new_unchecked(axis), T::zero());
 
             let mut res_rows = res.slice_range_mut(i.., i..);
-            refl.reflect_with_sign(&mut res_rows, self.diag[i].clone().signum());
+            refl.reflect_with_sign(&mut res_rows, self.diag[i].signum());
         }
 
         res
@@ -147,11 +139,6 @@ where
         &self.qr
     }
 
-    #[must_use]
-    pub(crate) fn diag_internal(&self) -> &OVector<T, DimMinimum<R, C>> {
-        &self.diag
-    }
-
     /// Multiplies the provided matrix by the transpose of the `Q` matrix of this decomposition.
     pub fn q_tr_mul<R2: Dim, C2: Dim, S2>(&self, rhs: &mut Matrix<T, R2, C2, S2>)
     // TODO: do we need a static constraint on the number of rows of rhs?
@@ -165,7 +152,7 @@ where
             let refl = Reflection::new(Unit::new_unchecked(axis), T::zero());
 
             let mut rhs_rows = rhs.rows_range_mut(i..);
-            refl.reflect_with_sign(&mut rhs_rows, self.diag[i].clone().signum().conjugate());
+            refl.reflect_with_sign(&mut rhs_rows, self.diag[i].signum().conjugate());
         }
     }
 }
@@ -177,7 +164,6 @@ where
     /// Solves the linear system `self * x = b`, where `x` is the unknown to be determined.
     ///
     /// Returns `None` if `self` is not invertible.
-    #[must_use = "Did you mean to use solve_mut()?"]
     pub fn solve<R2: Dim, C2: Dim, S2>(
         &self,
         b: &Matrix<T, R2, C2, S2>,
@@ -236,14 +222,14 @@ where
                 let coeff;
 
                 unsafe {
-                    let diag = self.diag.vget_unchecked(i).clone().modulus();
+                    let diag = self.diag.vget_unchecked(i).modulus();
 
                     if diag.is_zero() {
                         return false;
                     }
 
-                    coeff = b.vget_unchecked(i).clone().unscale(diag);
-                    *b.vget_unchecked_mut(i) = coeff.clone();
+                    coeff = b.vget_unchecked(i).unscale(diag);
+                    *b.vget_unchecked_mut(i) = coeff;
                 }
 
                 b.rows_range_mut(..i)
@@ -257,7 +243,6 @@ where
     /// Computes the inverse of the decomposed matrix.
     ///
     /// Returns `None` if the decomposed matrix is not invertible.
-    #[must_use]
     pub fn try_inverse(&self) -> Option<OMatrix<T, D, D>> {
         assert!(
             self.qr.is_square(),
@@ -265,7 +250,7 @@ where
         );
 
         // TODO: is there a less naive method ?
-        let (nrows, ncols) = self.qr.shape_generic();
+        let (nrows, ncols) = self.qr.data.shape();
         let mut res = OMatrix::identity_generic(nrows, ncols);
 
         if self.solve_mut(&mut res) {
@@ -276,7 +261,6 @@ where
     }
 
     /// Indicates if the decomposed matrix is invertible.
-    #[must_use]
     pub fn is_invertible(&self) -> bool {
         assert!(
             self.qr.is_square(),

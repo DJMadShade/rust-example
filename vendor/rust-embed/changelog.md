@@ -5,39 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
-Thanks to [Mark Drobnak](https://github.com/AzureMarker) for the changelog.
-
-## [6.4.1] - 2022-09-13
-
-- Update sha2 dependency version in utils crate [#186](https://github.com/pyrossh/rust-embed/issues/186)
-
-## [6.4.0] - 2022-04-15
-
-- Order files by filename [#171](https://github.com/pyros2097/rust-embed/issues/171). Thanks to [apognu](https://github.com/apognu)
-
-
-## [6.3.0] - 2021-11-28
-
-- Fixed a security issue in debug mode [#159](https://github.com/pyros2097/rust-embed/issues/159). Thanks to [5225225](https://github.com/5225225)
-
-## [6.2.0] - 2021-09-01
-
-- Fixed `include-exclude` feature when using cargo v2 resolver
-
-## [6.1.0] - 2021-08-31
-
-- Added `include-exclude` feature by [mbme](https://github.com/mbme)
-
-## [6.0.1] - 2021-08-21
-
-- Added doc comments to macro generated functions
-
-## [6.0.0] - 2021-08-01
-
-Idea came about from [Cody Casterline](https://github.com/NfNitLoop)
-
-- Breaking change the `Asset::get()` api has changed and now returns an `EmbeddedFile` which contains a `data` field which is the bytes of the file and
-  a `metadata` field which has theses 2 properties associated to the file `hash` and `last_modified`;
+Thanks to [Mcat12](https://github.com/Mcat12) for the changelog.
 
 ## [5.9.0] - 2021-01-18
 

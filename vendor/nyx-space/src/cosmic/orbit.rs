@@ -1,6 +1,6 @@
 /*
     Nyx, blazing fast astrodynamics
-    Copyright (C) 2022 Christopher Rabotin <christopher.rabotin@gmail.com>
+    Copyright (C) 2021 Christopher Rabotin <christopher.rabotin@gmail.com>
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -27,14 +27,8 @@ use super::na::{Matrix3, Matrix6, Vector3, Vector6};
 use super::State;
 use super::{BPlane, Frame};
 use crate::linalg::{Const, OVector};
-use crate::mc::MultivariateNormal;
-use crate::md::ui::Objective;
-use crate::md::StateParameter;
-use crate::time::{Duration, Epoch, Unit};
-use crate::utils::{
-    between_0_360, between_pm_180, cartesian_to_spherical, perpv, r1, r3, rss_orbit_errors,
-    spherical_to_cartesian,
-};
+use crate::time::{Duration, Epoch, TimeUnit};
+use crate::utils::{between_0_360, between_pm_180, perpv, r1, r3, rss_orbit_errors};
 use crate::NyxError;
 use std::f64::consts::PI;
 use std::f64::EPSILON;
@@ -547,24 +541,6 @@ impl Orbit {
         }
     }
 
-    /// Returns a copy of the state with a new radius
-    pub fn with_radius(self, new_radius: &Vector3<f64>) -> Self {
-        let mut me = self;
-        me.x = new_radius[0];
-        me.y = new_radius[1];
-        me.z = new_radius[2];
-        me
-    }
-
-    /// Returns a copy of the state with a new radius
-    pub fn with_velocity(self, new_velocity: &Vector3<f64>) -> Self {
-        let mut me = self;
-        me.vx = new_velocity[0];
-        me.vy = new_velocity[1];
-        me.vz = new_velocity[2];
-        me
-    }
-
     /// Returns the semi-major axis in km
     pub fn sma(&self) -> f64 {
         match self.frame {
@@ -617,7 +593,7 @@ impl Orbit {
     pub fn period(&self) -> Duration {
         match self.frame {
             Frame::Geoid { gm, .. } | Frame::Celestial { gm, .. } => {
-                2.0 * PI * (self.sma().powi(3) / gm).sqrt() * Unit::Second
+                2.0 * PI * (self.sma().powi(3) / gm).sqrt() * TimeUnit::Second
             }
             _ => panic!("orbital period not defined in this frame"),
         }
@@ -840,10 +816,6 @@ impl Orbit {
     ///
     /// NOTE: This function will emit a warning stating that the TA should be avoided if in a very near circular orbit
     /// Code from https://github.com/ChristopherRabotin/GMAT/blob/80bde040e12946a61dae90d9fc3538f16df34190/src/gmatutil/util/StateConversionUtil.cpp#L6835
-    ///
-    /// LIMITATION: For an orbit whose true anomaly is (very nearly) 0.0 or 180.0, this function may return either 0.0 or 180.0 with a very small time increment.
-    /// This is due to the precision of the cosine calculation: if the arccosine calculation is out of bounds, the sign of the cosine of the true anomaly is used
-    /// to determine whether the true anomaly should be 0.0 or 180.0. **In other words**, there is an ambiguity in the computation in the true anomaly exactly at 180.0 and 0.0.
     pub fn ta(&self) -> f64 {
         match self.frame {
             Frame::Celestial { .. } | Frame::Geoid { .. } => {
@@ -1402,58 +1374,6 @@ impl Orbit {
                 true
             }
     }
-
-    /// Use the current orbit as a template to generate mission design objectives.
-    /// Note: this sets the objective tolerances to be quite tight, so consider modifying them.
-    pub fn to_objectives(&self, params: &[StateParameter]) -> Result<Vec<Objective>, NyxError> {
-        let mut rtn = Vec::with_capacity(params.len());
-        for parameter in params {
-            rtn.push(Objective::new(*parameter, self.value(parameter)?));
-        }
-        Ok(rtn)
-    }
-
-    /// Create a multivariate normal dispersion structure from this orbit with the provided mean and covariance,
-    /// specified as {X, Y, Z, VX, VY, VZ} in km and km/s
-    pub fn disperse(
-        &self,
-        mean: Vector6<f64>,
-        cov: Matrix6<f64>,
-    ) -> Result<MultivariateNormal<Orbit>, NyxError> {
-        MultivariateNormal::new(
-            *self,
-            vec![
-                StateParameter::X,
-                StateParameter::Y,
-                StateParameter::Z,
-                StateParameter::VX,
-                StateParameter::VY,
-                StateParameter::VZ,
-            ],
-            mean,
-            cov,
-        )
-    }
-
-    /// Create a multivariate normal dispersion structure from this orbit with the provided covariance,
-    /// specified as {X, Y, Z, VX, VY, VZ} in km and km/s
-    pub fn disperse_zero_mean(
-        &self,
-        cov: Matrix6<f64>,
-    ) -> Result<MultivariateNormal<Orbit>, NyxError> {
-        MultivariateNormal::zero_mean(
-            *self,
-            vec![
-                StateParameter::X,
-                StateParameter::Y,
-                StateParameter::Z,
-                StateParameter::VX,
-                StateParameter::VY,
-                StateParameter::VZ,
-            ],
-            cov,
-        )
-    }
 }
 
 impl PartialEq for Orbit {
@@ -1784,95 +1704,6 @@ impl State for Orbit {
     fn add(self, other: OVector<f64, Self::Size>) -> Self {
         self + other
     }
-
-    fn value(&self, param: &StateParameter) -> Result<f64, NyxError> {
-        match *param {
-            StateParameter::ApoapsisRadius => Ok(self.apoapsis()),
-            StateParameter::AoL => Ok(self.aol()),
-            StateParameter::AoP => Ok(self.aop()),
-            StateParameter::BdotR => Ok(BPlane::new(*self)?.b_r.real()),
-            StateParameter::BdotT => Ok(BPlane::new(*self)?.b_t.real()),
-            StateParameter::BLTOF => Ok(BPlane::new(*self)?.ltof_s.real()),
-            StateParameter::C3 => Ok(self.c3()),
-            StateParameter::Declination => Ok(self.declination()),
-            StateParameter::EccentricAnomaly => Ok(self.ea()),
-            StateParameter::Eccentricity => Ok(self.ecc()),
-            StateParameter::Energy => Ok(self.energy()),
-            StateParameter::FlightPathAngle => Ok(self.fpa()),
-            StateParameter::GeodeticHeight => Ok(self.geodetic_height()),
-            StateParameter::GeodeticLatitude => Ok(self.geodetic_latitude()),
-            StateParameter::GeodeticLongitude => Ok(self.geodetic_longitude()),
-            StateParameter::Hmag => Ok(self.hmag()),
-            StateParameter::HX => Ok(self.hx()),
-            StateParameter::HY => Ok(self.hy()),
-            StateParameter::HZ => Ok(self.hz()),
-            StateParameter::HyperbolicAnomaly => self.hyperbolic_anomaly(),
-            StateParameter::Inclination => Ok(self.inc()),
-            StateParameter::MeanAnomaly => Ok(self.ma()),
-            StateParameter::PeriapsisRadius => Ok(self.periapsis()),
-            StateParameter::Period => Ok(self.period().in_seconds()),
-            StateParameter::RightAscension => Ok(self.right_ascension()),
-            StateParameter::RAAN => Ok(self.raan()),
-            StateParameter::Rmag => Ok(self.rmag()),
-            StateParameter::SemiMinorAxis => Ok(self.semi_minor_axis()),
-            StateParameter::SemiParameter => Ok(self.semi_parameter()),
-            StateParameter::SlantAngle { x, y, z } => {
-                let mut tgt = Vector3::new(x, y, z);
-                tgt /= tgt.norm();
-
-                Ok(self.r_hat().dot(&tgt).acos().to_degrees())
-            }
-            StateParameter::SMA => Ok(self.sma()),
-            StateParameter::TrueAnomaly => Ok(self.ta()),
-            StateParameter::TrueLongitude => Ok(self.tlong()),
-            StateParameter::VelocityDeclination => Ok(self.velocity_declination()),
-            StateParameter::Vmag => Ok(self.vmag()),
-            StateParameter::X => Ok(self.x),
-            StateParameter::Y => Ok(self.y),
-            StateParameter::Z => Ok(self.z),
-            StateParameter::VX => Ok(self.vx),
-            StateParameter::VY => Ok(self.vy),
-            StateParameter::VZ => Ok(self.vz),
-            _ => Err(NyxError::StateParameterUnavailable),
-        }
-    }
-
-    fn set_value(&mut self, param: &StateParameter, val: f64) -> Result<(), NyxError> {
-        match *param {
-            StateParameter::AoP => self.set_aop(val),
-            StateParameter::Eccentricity => self.set_ecc(val),
-            StateParameter::Inclination => self.set_inc(val),
-            StateParameter::RAAN => self.set_raan(val),
-            StateParameter::SMA => self.set_sma(val),
-            StateParameter::TrueAnomaly => self.set_ta(val),
-            StateParameter::X => self.x = val,
-            StateParameter::Y => self.y = val,
-            StateParameter::Z => self.z = val,
-            StateParameter::Rmag => {
-                // Convert the position to spherical coordinates
-                let (_, θ, φ) = cartesian_to_spherical(&self.radius());
-                // Convert back to cartesian after setting the new range value
-                let new_radius = spherical_to_cartesian(val, θ, φ);
-                self.x = new_radius.x;
-                self.y = new_radius.y;
-                self.z = new_radius.z;
-            }
-            StateParameter::VX => self.vx = val,
-            StateParameter::VY => self.vy = val,
-            StateParameter::VZ => self.vz = val,
-            StateParameter::Vmag => {
-                // Convert the velocity to spherical coordinates
-                let (_, θ, φ) = cartesian_to_spherical(&self.velocity());
-                // Convert back to cartesian after setting the new range value
-                let new_radius = spherical_to_cartesian(val, θ, φ);
-                self.vx = new_radius.x;
-                self.vy = new_radius.y;
-                self.vz = new_radius.z;
-            }
-            _ => return Err(NyxError::StateParameterUnavailable),
-        }
-        Ok(())
-    }
 }
 
 impl Add<OVector<f64, Const<6>>> for Orbit {
@@ -1889,11 +1720,5 @@ impl Add<OVector<f64, Const<6>>> for Orbit {
         me.vz += other[5];
 
         me
-    }
-}
-
-impl Default for Orbit {
-    fn default() -> Self {
-        Self::zeros()
     }
 }

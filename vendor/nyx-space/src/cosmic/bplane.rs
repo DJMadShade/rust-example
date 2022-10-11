@@ -1,6 +1,6 @@
 /*
     Nyx, blazing fast astrodynamics
-    Copyright (C) 2022 Christopher Rabotin <christopher.rabotin@gmail.com>
+    Copyright (C) 2021 Christopher Rabotin <christopher.rabotin@gmail.com>
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published
@@ -17,12 +17,12 @@
 */
 
 use super::hyperdual::linalg::norm;
-use super::hyperdual::{Float, OHyperdual};
+use super::hyperdual::{Float, Hyperdual};
 use super::{Frame, Orbit, OrbitDual, OrbitPartial};
 use crate::linalg::{Matrix2, Matrix3, Vector2, Vector3};
-use crate::md::objective::Objective;
+use crate::md::targeter::Objective;
 use crate::md::StateParameter;
-use crate::time::{Duration, Epoch, Unit};
+use crate::time::{Duration, Epoch, TimeUnit};
 use crate::utils::between_pm_180;
 use crate::NyxError;
 
@@ -54,8 +54,8 @@ impl BPlane {
                 "Orbit is not hyperbolic. Convert to target object first".to_string(),
             ))
         } else {
-            let one = OHyperdual::from(1.0);
-            let zero = OHyperdual::from(0.0);
+            let one = Hyperdual::from(1.0);
+            let zero = Hyperdual::from(0.0);
 
             let e_hat = orbit.evec() / orbit.ecc().dual;
             let h_hat = orbit.hvec() / orbit.hmag().dual;
@@ -140,7 +140,7 @@ impl BPlane {
     }
 
     pub fn ltof(&self) -> Duration {
-        self.ltof_s.real() * Unit::Second
+        self.ltof_s.real() * TimeUnit::Second
     }
 
     /// Returns the B plane angle in degrees between -180 and 180
@@ -236,7 +236,7 @@ impl BPlaneTarget {
     /// Initializes a new B Plane target with only the targets and the default tolerances.
     /// Default tolerances are 1 millimeter in positions and 1 second in LTOF
     pub fn from_targets(b_r_km: f64, b_t_km: f64, ltof: Duration) -> Self {
-        let tol_ltof: Duration = 6.0 * Unit::Hour;
+        let tol_ltof: Duration = 6.0 * TimeUnit::Hour;
         Self {
             b_t_km,
             b_r_km,
@@ -250,7 +250,7 @@ impl BPlaneTarget {
     /// Initializes a new B Plane target with only the B Plane targets (not LTOF constraint) and the default tolerances.
     /// Default tolerances are 1 millimeter in positions. Here, the LTOF tolerance is set to 100 days.
     pub fn from_bt_br(b_t_km: f64, b_r_km: f64) -> Self {
-        let ltof_tol: Duration = 100 * Unit::Day;
+        let ltof_tol: Duration = 100 * TimeUnit::Day;
         Self {
             b_t_km,
             b_r_km,
@@ -265,24 +265,25 @@ impl BPlaneTarget {
         self.ltof_s.abs() > 1e-10
     }
 
-    pub fn to_objectives(self) -> [Objective; 2] {
+    pub fn to_objectives(self) -> Vec<Objective> {
         self.to_objectives_with_tolerance(1.0)
     }
 
-    pub fn to_objectives_with_tolerance(self, tol_km: f64) -> [Objective; 2] {
-        [
+    pub fn to_objectives_with_tolerance(self, tol_km: f64) -> Vec<Objective> {
+        let mut objs = vec![
             Objective::within_tolerance(StateParameter::BdotR, self.b_r_km, tol_km),
             Objective::within_tolerance(StateParameter::BdotT, self.b_t_km, tol_km),
-        ]
-    }
+        ];
 
-    /// Includes the linearized time of flight as an objective
-    pub fn to_all_objectives_with_tolerance(self, tol_km: f64) -> [Objective; 3] {
-        [
-            Objective::within_tolerance(StateParameter::BdotR, self.b_r_km, tol_km),
-            Objective::within_tolerance(StateParameter::BdotT, self.b_t_km, tol_km),
-            Objective::within_tolerance(StateParameter::BLTOF, self.ltof_s, self.tol_ltof_s * 1e5),
-        ]
+        if self.ltof_s.abs() > std::f64::EPSILON {
+            objs.push(Objective::within_tolerance(
+                StateParameter::BLTOF,
+                self.ltof_s,
+                self.tol_ltof_s * 1e5,
+            ));
+        }
+
+        objs
     }
 }
 

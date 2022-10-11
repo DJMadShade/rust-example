@@ -4,11 +4,10 @@ use serde::{Deserialize, Serialize};
 use crate::allocator::Allocator;
 use crate::base::{DefaultAllocator, OMatrix, OVector};
 use crate::dimension::{Const, DimDiff, DimSub, U1};
+use crate::storage::Storage;
 use simba::scalar::ComplexField;
 
 use crate::linalg::householder;
-use crate::Matrix;
-use std::mem::MaybeUninit;
 
 /// Tridiagonalization of a symmetric matrix.
 #[cfg_attr(feature = "serde-serialize-no-std", derive(Serialize, Deserialize))]
@@ -51,7 +50,7 @@ where
     ///
     /// Only the lower-triangular part (including the diagonal) of `m` is read.
     pub fn new(mut m: OMatrix<T, D, D>) -> Self {
-        let dim = m.shape_generic().0;
+        let dim = m.data.shape().0;
 
         assert!(
             m.is_square(),
@@ -62,15 +61,19 @@ where
             "Unable to compute the symmetric tridiagonal decomposition of an empty matrix."
         );
 
-        let mut off_diagonal = Matrix::uninit(dim.sub(Const::<1>), Const::<1>);
-        let mut p = Matrix::zeros_generic(dim.sub(Const::<1>), Const::<1>);
+        let mut off_diagonal = unsafe {
+            crate::unimplemented_or_uninitialized_generic!(dim.sub(Const::<1>), Const::<1>)
+        };
+        let mut p = unsafe {
+            crate::unimplemented_or_uninitialized_generic!(dim.sub(Const::<1>), Const::<1>)
+        };
 
         for i in 0..dim.value() - 1 {
             let mut m = m.rows_range_mut(i + 1..);
             let (mut axis, mut m) = m.columns_range_pair_mut(i, i + 1..);
 
             let (norm, not_zero) = householder::reflection_axis_mut(&mut axis);
-            off_diagonal[i] = MaybeUninit::new(norm);
+            off_diagonal[i] = norm;
 
             if not_zero {
                 let mut p = p.rows_range_mut(i..);
@@ -84,8 +87,6 @@ where
             }
         }
 
-        // Safety: off_diagonal has been fully initialized.
-        let off_diagonal = unsafe { off_diagonal.assume_init() };
         Self {
             tri: m,
             off_diagonal,
@@ -130,7 +131,6 @@ where
     }
 
     /// The diagonal components of this decomposition.
-    #[must_use]
     pub fn diagonal(&self) -> OVector<T::RealField, D>
     where
         DefaultAllocator: Allocator<T::RealField, D>,
@@ -139,7 +139,6 @@ where
     }
 
     /// The off-diagonal components of this decomposition.
-    #[must_use]
     pub fn off_diagonal(&self) -> OVector<T::RealField, DimDiff<D, U1>>
     where
         DefaultAllocator: Allocator<T::RealField, DimDiff<D, U1>>,
@@ -148,7 +147,6 @@ where
     }
 
     /// Computes the orthogonal matrix `Q` of this decomposition.
-    #[must_use]
     pub fn q(&self) -> OMatrix<T, D, D> {
         householder::assemble_q(&self.tri, self.off_diagonal.as_slice())
     }
@@ -160,8 +158,8 @@ where
         self.tri.fill_upper_triangle(T::zero(), 2);
 
         for i in 0..self.off_diagonal.len() {
-            let val = T::from_real(self.off_diagonal[i].clone().modulus());
-            self.tri[(i + 1, i)] = val.clone();
+            let val = T::from_real(self.off_diagonal[i].modulus());
+            self.tri[(i + 1, i)] = val;
             self.tri[(i, i + 1)] = val;
         }
 

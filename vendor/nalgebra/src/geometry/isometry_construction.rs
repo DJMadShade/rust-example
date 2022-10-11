@@ -21,15 +21,6 @@ use crate::{
     UnitQuaternion,
 };
 
-impl<T: SimdRealField, R: AbstractRotation<T, D>, const D: usize> Default for Isometry<T, R, D>
-where
-    T::Element: SimdRealField,
-{
-    fn default() -> Self {
-        Self::identity()
-    }
-}
-
 impl<T: SimdRealField, R: AbstractRotation<T, D>, const D: usize> Isometry<T, R, D>
 where
     T::Element: SimdRealField,
@@ -95,7 +86,7 @@ where
     Standard: Distribution<T> + Distribution<R>,
 {
     #[inline]
-    fn sample<G: Rng + ?Sized>(&self, rng: &mut G) -> Isometry<T, R, D> {
+    fn sample<'a, G: Rng + ?Sized>(&self, rng: &'a mut G) -> Isometry<T, R, D> {
         Isometry::from_parts(rng.gen(), rng.gen())
     }
 }
@@ -317,7 +308,7 @@ macro_rules! look_at_isometry_construction_impl(
                 $RotId::face_towards(&(target - eye), up))
         }
 
-        /// Deprecated: Use [`Isometry::face_towards`] instead.
+        /// Deprecated: Use [Isometry::face_towards] instead.
         #[deprecated(note="renamed to `face_towards`")]
         pub fn new_observer_frame(eye:    &Point3<T>,
                                   target: &Point3<T>,

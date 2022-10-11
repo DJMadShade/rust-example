@@ -2,12 +2,12 @@
 //!
 //! **This module is only available when the `proptest-support` feature is enabled in `nalgebra`**.
 //!
-//! `proptest` is a library for *property-based testing*. While similar to `QuickCheck`,
+//! `proptest` is a library for *property-based testing*. While similar to QuickCheck,
 //! which may be more familiar to some users, it has a more sophisticated design that
 //! provides users with automatic invariant-preserving shrinking. This means that when using
 //! `proptest`, you rarely need to write your own shrinkers - which is usually very difficult -
 //! and can instead get this "for free". Moreover, `proptest` does not rely on a canonical
-//! `Arbitrary` trait implementation like `QuickCheck`, though it does also provide this. For
+//! `Arbitrary` trait implementation like QuickCheck, though it does also provide this. For
 //! more information, check out the [proptest docs](https://docs.rs/proptest/0.10.1/proptest/)
 //! and the [proptest book](https://altsysrq.github.io/proptest-book/intro.html).
 //!
@@ -27,7 +27,7 @@
 //! In `proptest`, it is usually preferable to have free functions that generate *strategies*.
 //! Currently, the [matrix](fn.matrix.html) function fills this role. The analogous function for
 //! column vectors is [vector](fn.vector.html). Let's take a quick look at how it may be used:
-//! ```
+//! ```rust
 //! use nalgebra::proptest::matrix;
 //! use proptest::prelude::*;
 //!
@@ -52,7 +52,7 @@
 //! number of columns to vary. One way to do this is to use `proptest` combinators in combination
 //! with [matrix](fn.matrix.html) as follows:
 //!
-//! ```
+//! ```rust
 //! use nalgebra::{Dynamic, OMatrix, Const};
 //! use nalgebra::proptest::matrix;
 //! use proptest::prelude::*;
@@ -92,7 +92,7 @@
 //!
 //! If you don't care about the dimensions of matrices, you can write tests like these:
 //!
-//! ```
+//! ```rust
 //! use nalgebra::{DMatrix, DVector, Dynamic, Matrix3, OMatrix, Vector3, U3};
 //! use proptest::prelude::*;
 //!
@@ -316,7 +316,7 @@ where
 /// with length in the provided range.
 ///
 /// This is a convenience function for calling
-/// [`matrix(value_strategy, length, U1)`](fn.matrix.html) and should
+/// [matrix(value_strategy, length, U1)](fn.matrix.html) and should
 /// be used when you only want to generate column vectors, as it's simpler and makes the intent
 /// clear.
 pub fn vector<D, ScalarStrategy>(

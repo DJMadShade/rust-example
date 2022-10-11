@@ -40,13 +40,10 @@ pub trait Norm<T: SimdComplexField> {
 }
 
 /// Euclidean norm.
-#[derive(Copy, Clone, Debug)]
 pub struct EuclideanNorm;
 /// Lp norm.
-#[derive(Copy, Clone, Debug)]
 pub struct LpNorm(pub i32);
 /// L-infinite norm aka. Chebytchev norm aka. uniform norm aka. suppremum norm.
-#[derive(Copy, Clone, Debug)]
 pub struct UniformNorm;
 
 impl<T: SimdComplexField> Norm<T> for EuclideanNorm {
@@ -161,7 +158,6 @@ impl<T: SimdComplexField> Norm<T> for UniformNorm {
 impl<T: Scalar, R: Dim, C: Dim, S: Storage<T, R, C>> Matrix<T, R, C, S> {
     /// The squared L2 norm of this vector.
     #[inline]
-    #[must_use]
     pub fn norm_squared(&self) -> T::SimdRealField
     where
         T: SimdComplexField,
@@ -180,7 +176,6 @@ impl<T: Scalar, R: Dim, C: Dim, S: Storage<T, R, C>> Matrix<T, R, C, S> {
     ///
     /// Use `.apply_norm` to apply a custom norm.
     #[inline]
-    #[must_use]
     pub fn norm(&self) -> T::SimdRealField
     where
         T: SimdComplexField,
@@ -192,7 +187,6 @@ impl<T: Scalar, R: Dim, C: Dim, S: Storage<T, R, C>> Matrix<T, R, C, S> {
     ///
     /// Use `.apply_metric_distance` to apply a custom norm.
     #[inline]
-    #[must_use]
     pub fn metric_distance<R2, C2, S2>(&self, rhs: &Matrix<T, R2, C2, S2>) -> T::SimdRealField
     where
         T: SimdComplexField,
@@ -217,7 +211,6 @@ impl<T: Scalar, R: Dim, C: Dim, S: Storage<T, R, C>> Matrix<T, R, C, S> {
     /// assert_eq!(v.apply_norm(&EuclideanNorm), v.norm());
     /// ```
     #[inline]
-    #[must_use]
     pub fn apply_norm(&self, norm: &impl Norm<T>) -> T::SimdRealField
     where
         T: SimdComplexField,
@@ -240,7 +233,6 @@ impl<T: Scalar, R: Dim, C: Dim, S: Storage<T, R, C>> Matrix<T, R, C, S> {
     /// assert_eq!(v1.apply_metric_distance(&v2, &EuclideanNorm), (v1 - v2).norm());
     /// ```
     #[inline]
-    #[must_use]
     pub fn apply_metric_distance<R2, C2, S2>(
         &self,
         rhs: &Matrix<T, R2, C2, S2>,
@@ -262,7 +254,6 @@ impl<T: Scalar, R: Dim, C: Dim, S: Storage<T, R, C>> Matrix<T, R, C, S> {
     ///
     /// This function is simply implemented as a call to `norm()`
     #[inline]
-    #[must_use]
     pub fn magnitude(&self) -> T::SimdRealField
     where
         T: SimdComplexField,
@@ -276,7 +267,6 @@ impl<T: Scalar, R: Dim, C: Dim, S: Storage<T, R, C>> Matrix<T, R, C, S> {
     ///
     /// This function is simply implemented as a call to `norm_squared()`
     #[inline]
-    #[must_use]
     pub fn magnitude_squared(&self) -> T::SimdRealField
     where
         T: SimdComplexField,
@@ -308,7 +298,6 @@ impl<T: Scalar, R: Dim, C: Dim, S: Storage<T, R, C>> Matrix<T, R, C, S> {
 
     /// The Lp norm of this matrix.
     #[inline]
-    #[must_use]
     pub fn lp_norm(&self, p: i32) -> T::SimdRealField
     where
         T: SimdComplexField,
@@ -328,7 +317,7 @@ impl<T: Scalar, R: Dim, C: Dim, S: Storage<T, R, C>> Matrix<T, R, C, S> {
         DefaultAllocator: Allocator<T, R, C> + Allocator<T::Element, R, C>,
     {
         let n = self.norm();
-        let le = n.clone().simd_le(min_norm);
+        let le = n.simd_le(min_norm);
         let val = self.unscale(n);
         SimdOption::new(val, le)
     }
@@ -352,7 +341,6 @@ impl<T: Scalar, R: Dim, C: Dim, S: Storage<T, R, C>> Matrix<T, R, C, S> {
 
     /// Returns a new vector with the same magnitude as `self` clamped between `0.0` and `max`.
     #[inline]
-    #[must_use]
     pub fn cap_magnitude(&self, max: T::RealField) -> OMatrix<T, R, C>
     where
         T: ComplexField,
@@ -369,7 +357,6 @@ impl<T: Scalar, R: Dim, C: Dim, S: Storage<T, R, C>> Matrix<T, R, C, S> {
 
     /// Returns a new vector with the same magnitude as `self` clamped between `0.0` and `max`.
     #[inline]
-    #[must_use]
     pub fn simd_cap_magnitude(&self, max: T::SimdRealField) -> OMatrix<T, R, C>
     where
         T: SimdComplexField,
@@ -377,7 +364,7 @@ impl<T: Scalar, R: Dim, C: Dim, S: Storage<T, R, C>> Matrix<T, R, C, S> {
         DefaultAllocator: Allocator<T, R, C> + Allocator<T::Element, R, C>,
     {
         let n = self.norm();
-        let scaled = self.scale(max.clone() / n.clone());
+        let scaled = self.scale(max / n);
         let use_scaled = n.simd_gt(max);
         scaled.select(use_scaled, self.clone_owned())
     }
@@ -413,7 +400,7 @@ impl<T: Scalar, R: Dim, C: Dim, S: StorageMut<T, R, C>> Matrix<T, R, C, S> {
         T: SimdComplexField,
     {
         let n = self.norm();
-        self.unscale_mut(n.clone());
+        self.unscale_mut(n);
 
         n
     }
@@ -433,8 +420,8 @@ impl<T: Scalar, R: Dim, C: Dim, S: StorageMut<T, R, C>> Matrix<T, R, C, S> {
         DefaultAllocator: Allocator<T, R, C> + Allocator<T::Element, R, C>,
     {
         let n = self.norm();
-        let le = n.clone().simd_le(min_norm);
-        self.apply(|e| *e = e.clone().simd_unscale(n.clone()).select(le, e.clone()));
+        let le = n.simd_le(min_norm);
+        self.apply(|e| e.simd_unscale(n).select(le, e));
         SimdOption::new(n, le)
     }
 
@@ -451,7 +438,7 @@ impl<T: Scalar, R: Dim, C: Dim, S: StorageMut<T, R, C>> Matrix<T, R, C, S> {
         if n <= min_norm {
             None
         } else {
-            self.unscale_mut(n.clone());
+            self.unscale_mut(n);
             Some(n)
         }
     }
@@ -508,8 +495,13 @@ where
     /// The i-the canonical basis element.
     #[inline]
     fn canonical_basis_element(i: usize) -> Self {
+        assert!(i < D::dim(), "Index out of bound.");
+
         let mut res = Self::zero();
-        res[i] = T::one();
+        unsafe {
+            *res.data.get_unchecked_linear_mut(i) = T::one();
+        }
+
         res
     }
 
@@ -572,7 +564,7 @@ where
                         && f(&Self::canonical_basis_element(1));
                 } else if vs.len() == 1 {
                     let v = &vs[0];
-                    let res = Self::from_column_slice(&[-v[1].clone(), v[0].clone()]);
+                    let res = Self::from_column_slice(&[-v[1], v[0]]);
 
                     let _ = f(&res.normalize());
                 }
@@ -588,10 +580,10 @@ where
                     let v = &vs[0];
                     let mut a;
 
-                    if v[0].clone().norm1() > v[1].clone().norm1() {
-                        a = Self::from_column_slice(&[v[2].clone(), T::zero(), -v[0].clone()]);
+                    if v[0].norm1() > v[1].norm1() {
+                        a = Self::from_column_slice(&[v[2], T::zero(), -v[0]]);
                     } else {
-                        a = Self::from_column_slice(&[T::zero(), -v[2].clone(), v[1].clone()]);
+                        a = Self::from_column_slice(&[T::zero(), -v[2], v[1]]);
                     };
 
                     let _ = a.normalize_mut();

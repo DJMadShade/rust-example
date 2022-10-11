@@ -1,17 +1,10 @@
-use num::Signed;
+use num::{Bounded, Signed};
 use std::{f32, f64};
 
 use approx::{RelativeEq, UlpsEq};
 
 use crate::scalar::ComplexField;
 
-#[cfg(all(
-    any(target_arch = "nvptx", target_arch = "nvptx64"),
-    not(feature = "std"),
-    not(feature = "libm_force"),
-    feature = "cuda"
-))]
-use cuda_std::GpuFloat;
 #[cfg(all(not(feature = "std"), not(feature = "libm_force"), feature = "libm"))]
 use num::Float;
 //#[cfg(feature = "decimal")]
@@ -24,27 +17,23 @@ pub trait RealField:
     + RelativeEq<Epsilon = Self>
     + UlpsEq<Epsilon = Self>
     + Signed
+    + Bounded
     + PartialOrd
 {
     /// Is the sign of this real number positive?
-    fn is_sign_positive(&self) -> bool;
+    fn is_sign_positive(self) -> bool;
     /// Is the sign of this real number negative?
-    fn is_sign_negative(&self) -> bool;
-    /// Copies the sign of `sign` to `self`.
+    fn is_sign_negative(self) -> bool;
+    /// Copies the sign of `self` to `to`.
     ///
-    /// - Returns `self.simd_abs()` if `sign` is positive or positive-zero.
-    /// - Returns `-self.simd_abs()` if `sign` is negative or negative-zero.
-    fn copysign(self, sign: Self) -> Self;
+    /// - Returns `to.simd_abs()` if `self` is positive or positive-zero.
+    /// - Returns `-to.simd_abs()` if `self` is negative or negative-zero.
+    fn copysign(self, to: Self) -> Self;
 
     fn max(self, other: Self) -> Self;
     fn min(self, other: Self) -> Self;
     fn clamp(self, min: Self, max: Self) -> Self;
     fn atan2(self, other: Self) -> Self;
-
-    /// The smallest finite positive value representable using this type.
-    fn min_value() -> Option<Self>;
-    /// The largest finite positive value representable using this type.
-    fn max_value() -> Option<Self>;
 
     fn pi() -> Self;
     fn two_pi() -> Self;
@@ -65,21 +54,21 @@ pub trait RealField:
 }
 
 macro_rules! impl_real(
-    ($($T:ty, $M:ident, $cpysgn_mod: ident, $atan_mod: ident);*) => ($(
+    ($($T:ty, $M:ident, $libm: ident);*) => ($(
         impl RealField for $T {
             #[inline]
-            fn is_sign_positive(&self) -> bool {
-                $M::is_sign_positive(*self)
+            fn is_sign_positive(self) -> bool {
+                $M::is_sign_positive(self)
             }
 
             #[inline]
-            fn is_sign_negative(&self) -> bool {
-                $M::is_sign_negative(*self)
+            fn is_sign_negative(self) -> bool {
+                $M::is_sign_negative(self)
             }
 
             #[inline(always)]
             fn copysign(self, sign: Self) -> Self {
-                $cpysgn_mod::copysign(self, sign)
+                self.copysign(sign)
             }
 
             #[inline]
@@ -105,20 +94,7 @@ macro_rules! impl_real(
 
             #[inline]
             fn atan2(self, other: Self) -> Self {
-                $atan_mod::atan2(self, other)
-            }
-
-
-            /// The smallest finite positive value representable using this type.
-            #[inline]
-            fn min_value() -> Option<Self> {
-                Some($M::MIN)
-            }
-
-            /// The largest finite positive value representable using this type.
-            #[inline]
-            fn max_value() -> Option<Self> {
-                Some($M::MAX)
+                $libm::atan2(self, other)
             }
 
             /// Archimedes' constant.
@@ -215,28 +191,12 @@ macro_rules! impl_real(
     )*)
 );
 
-#[cfg(all(
-    not(target_arch = "nvptx"),
-    not(target_arch = "nvptx64"),
-    not(feature = "std"),
-    not(feature = "libm_force"),
-    feature = "libm"
-))]
-impl_real!(f32, f32, Float, Float; f64, f64, Float, Float);
+#[cfg(all(not(feature = "std"), not(feature = "libm_force"), feature = "libm"))]
+impl_real!(f32, f32, Float; f64, f64, Float);
 #[cfg(all(feature = "std", not(feature = "libm_force")))]
-impl_real!(f32, f32, f32, f32; f64, f64, f64, f64);
-#[cfg(all(
-    any(target_arch = "nvptx", target_arch = "nvptx64"),
-    not(feature = "std"),
-    not(feature = "libm_force"),
-    feature = "cuda"
-))]
-impl_real!(
-    f32, f32, GpuFloat, GpuFloat;
-    f64, f64, GpuFloat, GpuFloat
-);
+impl_real!(f32, f32, f32; f64, f64, f64);
 #[cfg(feature = "libm_force")]
-impl_real!(f32, f32, libm_force_f32, libm_force_f32; f64, f64, libm_force, libm_force);
+impl_real!(f32, f32, libm_force_f32; f64, f64, libm_force);
 
 // We use this dummy module to remove the 'f' suffix at the end of
 // each libm functions to make our generic Real/ComplexField impl
@@ -246,11 +206,6 @@ mod libm_force_f32 {
     #[inline(always)]
     pub fn atan2(y: f32, x: f32) -> f32 {
         libm_force::atan2f(y, x)
-    }
-
-    #[inline(always)]
-    pub fn copysign(x: f32, y: f32) -> f32 {
-        libm_force::copysignf(x, y)
     }
 }
 

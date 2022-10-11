@@ -17,15 +17,6 @@ use crate::geometry::{Rotation2, UnitComplex};
 use simba::scalar::{RealField, SupersetOf};
 use simba::simd::SimdRealField;
 
-impl<T: SimdRealField> Default for UnitComplex<T>
-where
-    T::Element: SimdRealField,
-{
-    fn default() -> Self {
-        Self::identity()
-    }
-}
-
 /// # Identity
 impl<T: SimdRealField> UnitComplex<T>
 where
@@ -118,7 +109,7 @@ where
     /// the `::new(angle)` method instead is more common.
     #[inline]
     pub fn from_scaled_axis<SB: Storage<T, U1>>(axisangle: Vector<T, U1, SB>) -> Self {
-        Self::from_angle(axisangle[0].clone())
+        Self::from_angle(axisangle[0])
     }
 }
 
@@ -131,11 +122,10 @@ where
     ///
     /// # Example
     /// ```
-    /// #[macro_use] extern crate approx;
     /// # use nalgebra::UnitComplex;
     /// let c = UnitComplex::new(1.0f64);
     /// let c2 = c.cast::<f32>();
-    /// assert_relative_eq!(c2, UnitComplex::new(1.0f32));
+    /// assert_eq!(c2, UnitComplex::new(1.0f32));
     /// ```
     pub fn cast<To: Scalar>(self) -> UnitComplex<To>
     where
@@ -158,7 +148,6 @@ where
     /// assert_eq!(*rot.complex(), Complex::new(angle.cos(), angle.sin()));
     /// ```
     #[inline]
-    #[must_use]
     pub fn complex(&self) -> &Complex<T> {
         self.as_ref()
     }
@@ -176,8 +165,8 @@ where
     /// The input complex number will be normalized. Returns the norm of the complex number as well.
     #[inline]
     pub fn from_complex_and_get(q: Complex<T>) -> (Self, T) {
-        let norm = (q.im.clone() * q.im.clone() + q.re.clone() * q.re.clone()).simd_sqrt();
-        (Self::new_unchecked(q / norm.clone()), norm)
+        let norm = (q.im * q.im + q.re * q.re).simd_sqrt();
+        (Self::new_unchecked(q / norm), norm)
     }
 
     /// Builds the unit complex number from the corresponding 2D rotation matrix.
@@ -192,7 +181,7 @@ where
     // TODO: add UnitComplex::from(...) instead?
     #[inline]
     pub fn from_rotation_matrix(rotmat: &Rotation2<T>) -> Self {
-        Self::new_unchecked(Complex::new(rotmat[(0, 0)].clone(), rotmat[(1, 0)].clone()))
+        Self::new_unchecked(Complex::new(rotmat[(0, 0)], rotmat[(1, 0)]))
     }
 
     /// Builds a rotation from a basis assumed to be orthonormal.
@@ -255,7 +244,6 @@ where
     /// assert_relative_eq!(rot_to.inverse() * rot2, rot1);
     /// ```
     #[inline]
-    #[must_use]
     pub fn rotation_to(&self, other: &Self) -> Self {
         other / self
     }
@@ -274,7 +262,6 @@ where
     /// assert_relative_eq!(pow.angle(), 2.0 * 0.78);
     /// ```
     #[inline]
-    #[must_use]
     pub fn powf(&self, n: T) -> Self {
         Self::from_angle(self.angle() * n)
     }
@@ -393,8 +380,8 @@ where
         SB: Storage<T, U2>,
         SC: Storage<T, U2>,
     {
-        let sang = na.perp(nb);
-        let cang = na.dot(nb);
+        let sang = na.perp(&nb);
+        let cang = na.dot(&nb);
 
         Self::from_angle(sang.simd_atan2(cang) * s)
     }
@@ -420,7 +407,7 @@ where
     #[inline]
     fn sample<'a, R: Rng + ?Sized>(&self, rng: &mut R) -> UnitComplex<T> {
         let x = rng.sample(rand_distr::UnitCircle);
-        UnitComplex::new_unchecked(Complex::new(x[0].clone(), x[1].clone()))
+        UnitComplex::new_unchecked(Complex::new(x[0], x[1]))
     }
 }
 

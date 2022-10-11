@@ -10,7 +10,6 @@ impl<'a, T: Scalar, R: Dim, C: Dim, RStride: Dim, CStride: Dim>
 {
     /// Creates, without bound-checking, a matrix slice from an array and with dimensions and strides specified by generic types instances.
     ///
-    /// # Safety
     /// This method is unsafe because the input data array is not checked to contain enough elements.
     /// The generic types `R`, `C`, `RStride`, `CStride` can either be type-level integers or integers wrapped with `Dynamic::new()`.
     #[inline]
@@ -60,7 +59,6 @@ impl<'a, T: Scalar, R: Dim, C: Dim, RStride: Dim, CStride: Dim>
 impl<'a, T: Scalar, R: Dim, C: Dim> MatrixSlice<'a, T, R, C> {
     /// Creates, without bound-checking, a matrix slice from an array and with dimensions specified by generic types instances.
     ///
-    /// # Safety
     /// This method is unsafe because the input data array is not checked to contain enough elements.
     /// The generic types `R` and `C` can either be type-level integers or integers wrapped with `Dynamic::new()`.
     #[inline]
@@ -148,7 +146,6 @@ impl<'a, T: Scalar, R: Dim, C: Dim, RStride: Dim, CStride: Dim>
 {
     /// Creates, without bound-checking, a mutable matrix slice from an array and with dimensions and strides specified by generic types instances.
     ///
-    /// # Safety
     /// This method is unsafe because the input data array is not checked to contain enough elements.
     /// The generic types `R`, `C`, `RStride`, `CStride` can either be type-level integers or integers wrapped with `Dynamic::new()`.
     #[inline]
@@ -220,7 +217,6 @@ impl<'a, T: Scalar, R: Dim, C: Dim, RStride: Dim, CStride: Dim>
 impl<'a, T: Scalar, R: Dim, C: Dim> MatrixSliceMutMN<'a, T, R, C> {
     /// Creates, without bound-checking, a mutable matrix slice from an array and with dimensions specified by generic types instances.
     ///
-    /// # Safety
     /// This method is unsafe because the input data array is not checked to contain enough elements.
     /// The generic types `R` and `C` can either be type-level integers or integers wrapped with `Dynamic::new()`.
     #[inline]

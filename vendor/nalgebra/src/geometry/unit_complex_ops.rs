@@ -1,6 +1,3 @@
-// The macros break if the references are taken out, for some reason.
-#![allow(clippy::op_ref)]
-
 use std::ops::{Div, DivAssign, Mul, MulAssign};
 
 use crate::base::storage::Storage;
@@ -255,9 +252,9 @@ complex_op_impl_all!(
     [ref val] =>  self * &rhs;
     [val ref] => &self *  rhs;
     [ref ref] => {
-        let i = self.as_ref().im.clone();
-        let r = self.as_ref().re.clone();
-        Vector2::new(r.clone() * rhs[0].clone() - i.clone() * rhs[1].clone(), i * rhs[0].clone() + r * rhs[1].clone())
+        let i = self.as_ref().im;
+        let r = self.as_ref().re;
+        Vector2::new(r * rhs[0] - i * rhs[1], i * rhs[0] + r * rhs[1])
     };
 );
 
@@ -306,9 +303,9 @@ complex_op_impl_all!(
     self: UnitComplex<T>, rhs: Translation<T, 2>,
     Output = Isometry<T, UnitComplex<T>, 2>;
     [val val] => Isometry::from_parts(Translation::from(&self *  rhs.vector), self);
-    [ref val] => Isometry::from_parts(Translation::from( self *  rhs.vector), self.clone());
+    [ref val] => Isometry::from_parts(Translation::from( self *  rhs.vector), *self);
     [val ref] => Isometry::from_parts(Translation::from(&self * &rhs.vector), self);
-    [ref ref] => Isometry::from_parts(Translation::from( self * &rhs.vector), self.clone());
+    [ref ref] => Isometry::from_parts(Translation::from( self * &rhs.vector), *self);
 );
 
 // Translation × UnitComplex
@@ -317,10 +314,10 @@ complex_op_impl_all!(
     ;
     self: Translation<T, 2>, right: UnitComplex<T>,
     Output = Isometry<T, UnitComplex<T>, 2>;
-    [val val] => Isometry::from_parts(self,   right);
-    [ref val] => Isometry::from_parts(self.clone(),  right);
-    [val ref] => Isometry::from_parts(self,  right.clone());
-    [ref ref] => Isometry::from_parts(self.clone(), right.clone());
+    [val val] => Isometry::from_parts(self, right);
+    [ref val] => Isometry::from_parts(self.clone(), right);
+    [val ref] => Isometry::from_parts(self, *right);
+    [ref ref] => Isometry::from_parts(self.clone(), *right);
 );
 
 // UnitComplex ×= UnitComplex
@@ -330,7 +327,7 @@ where
 {
     #[inline]
     fn mul_assign(&mut self, rhs: UnitComplex<T>) {
-        *self = self.clone() * rhs
+        *self = &*self * rhs
     }
 }
 
@@ -340,7 +337,7 @@ where
 {
     #[inline]
     fn mul_assign(&mut self, rhs: &'b UnitComplex<T>) {
-        *self = self.clone() * rhs
+        *self = &*self * rhs
     }
 }
 
@@ -351,7 +348,7 @@ where
 {
     #[inline]
     fn div_assign(&mut self, rhs: UnitComplex<T>) {
-        *self = self.clone() / rhs
+        *self = &*self / rhs
     }
 }
 
@@ -361,7 +358,7 @@ where
 {
     #[inline]
     fn div_assign(&mut self, rhs: &'b UnitComplex<T>) {
-        *self = self.clone() / rhs
+        *self = &*self / rhs
     }
 }
 
@@ -372,7 +369,7 @@ where
 {
     #[inline]
     fn mul_assign(&mut self, rhs: Rotation<T, 2>) {
-        *self = self.clone() * rhs
+        *self = &*self * rhs
     }
 }
 
@@ -382,7 +379,7 @@ where
 {
     #[inline]
     fn mul_assign(&mut self, rhs: &'b Rotation<T, 2>) {
-        *self = self.clone() * rhs
+        *self = &*self * rhs
     }
 }
 
@@ -393,7 +390,7 @@ where
 {
     #[inline]
     fn div_assign(&mut self, rhs: Rotation<T, 2>) {
-        *self = self.clone() / rhs
+        *self = &*self / rhs
     }
 }
 
@@ -403,7 +400,7 @@ where
 {
     #[inline]
     fn div_assign(&mut self, rhs: &'b Rotation<T, 2>) {
-        *self = self.clone() / rhs
+        *self = &*self / rhs
     }
 }
 
@@ -424,7 +421,7 @@ where
 {
     #[inline]
     fn mul_assign(&mut self, rhs: &'b UnitComplex<T>) {
-        self.mul_assign(rhs.clone().to_rotation_matrix())
+        self.mul_assign(rhs.to_rotation_matrix())
     }
 }
 
@@ -445,6 +442,6 @@ where
 {
     #[inline]
     fn div_assign(&mut self, rhs: &'b UnitComplex<T>) {
-        self.div_assign(rhs.clone().to_rotation_matrix())
+        self.div_assign(rhs.to_rotation_matrix())
     }
 }
